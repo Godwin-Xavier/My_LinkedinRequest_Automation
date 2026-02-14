@@ -105,7 +105,16 @@ jobs:
           PY
 
       - name: Run outreach now
-        run: python main.py --run-now
+        run: |
+          set -o pipefail
+          python main.py --run-now 2>&1 | tee run_output.log
+
+      - name: Upload outreach log artifact
+        if: always() && hashFiles('run_output.log') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: outreach-log-${{ github.run_id }}
+          path: run_output.log
 
       - name: Save invite database cache
         if: always() && hashFiles('data/agent_state.db') != ''
@@ -132,7 +141,7 @@ jobs:
           fi
 
           RUN_URL="https://github.com/${GH_REPO}/actions/runs/${GH_RUN_ID}"
-          MSG="LinkedIn Automation workflow failed on ${GH_REF_NAME}. Check run: ${RUN_URL}"
+          MSG="LinkedIn Automation workflow failed on ${GH_REF_NAME}. Check run + artifact log: ${RUN_URL}"
 
           curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
