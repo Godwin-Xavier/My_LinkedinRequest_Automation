@@ -5,6 +5,7 @@ Uses undetected-chromedriver and selenium-stealth to avoid bot detection.
 import random
 import sys
 import time
+import os
 from typing import Optional
 
 import undetected_chromedriver as uc
@@ -60,6 +61,15 @@ class StealthBrowser:
     def start(self) -> uc.Chrome:
         """Initialize and return stealth Chrome driver."""
         options = uc.ChromeOptions()
+
+        chrome_path = (
+            os.getenv("CHROME_PATH")
+            or os.getenv("GOOGLE_CHROME_BIN")
+            or os.getenv("CHROME_BIN")
+        )
+        if chrome_path:
+            options.binary_location = chrome_path
+            _print(f"Using Chrome binary: {chrome_path}")
         
         if self.headless:
             options.add_argument("--headless=new")
@@ -85,11 +95,17 @@ class StealthBrowser:
         else:
             _print("Could not detect Chrome version, letting undetected-chromedriver decide.")
 
-        self.driver = uc.Chrome(
-            options=options, 
-            use_subprocess=True,
-            version_main=version_main
-        )
+        uc_kwargs = {
+            "options": options,
+            # More stable in CI runners.
+            "use_subprocess": os.getenv("GITHUB_ACTIONS") != "true",
+        }
+        if version_main:
+            uc_kwargs["version_main"] = version_main
+        if chrome_path:
+            uc_kwargs["browser_executable_path"] = chrome_path
+
+        self.driver = uc.Chrome(**uc_kwargs)
         
         # Apply selenium-stealth
         stealth(

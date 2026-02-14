@@ -45,7 +45,13 @@ jobs:
           cache: pip
 
       - name: Install Google Chrome
+        id: chrome
         uses: browser-actions/setup-chrome@v1
+
+      - name: Export Chrome path
+        run: |
+          echo "CHROME_PATH=${{ steps.chrome.outputs.chrome-path }}" >> "$GITHUB_ENV"
+          echo "Chrome path: ${{ steps.chrome.outputs.chrome-path }}"
 
       - name: Build .env from GitHub Secrets
         env:
@@ -84,6 +90,19 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      - name: Preflight diagnostics
+        run: |
+          python --version
+          google-chrome --version || true
+          python - <<'PY'
+          from config import config
+          print(f"HEADLESS={config.HEADLESS}")
+          print(f"DAILY_INVITE_LIMIT={config.DAILY_INVITE_LIMIT}")
+          print(f"PRIORITY_LOCATIONS={config.PRIORITY_LOCATIONS}")
+          errs = config.validate()
+          print(f"Config validation errors={errs}")
+          PY
 
       - name: Run outreach now
         run: python main.py --run-now
