@@ -12,6 +12,7 @@ from typing import Optional
 
 import undetected_chromedriver as uc
 from selenium import webdriver
+from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -82,9 +83,7 @@ class StealthBrowser:
     def start(self) -> WebDriver:
         """Initialize and return stealth Chrome driver."""
         running_in_github_actions = os.getenv("GITHUB_ACTIONS") == "true"
-        selenium_options = webdriver.ChromeOptions() if running_in_github_actions else None
-        uc_options = uc.ChromeOptions() if not running_in_github_actions else None
-        options = selenium_options or uc_options
+        options = webdriver.ChromeOptions()
 
         chrome_path = (
             os.getenv("CHROME_PATH")
@@ -117,7 +116,14 @@ class StealthBrowser:
         # UC often lags behind the fast-moving Chrome versions on hosted runners.
         if running_in_github_actions:
             _print("GitHub Actions detected: using Selenium Manager Chrome driver")
-            self.driver = webdriver.Chrome(options=selenium_options)
+            chromedriver_path = os.getenv("CHROMEDRIVER_PATH", "").strip()
+            if chromedriver_path:
+                _print(f"Using ChromeDriver binary: {chromedriver_path}")
+                service = ChromeService(executable_path=chromedriver_path)
+            else:
+                _print("CHROMEDRIVER_PATH not set; falling back to Selenium Manager resolution")
+                service = ChromeService()
+            self.driver = webdriver.Chrome(service=service, options=options)
         else:
             version_main = self._get_chrome_major_version(chrome_path)
             if version_main:
@@ -126,7 +132,7 @@ class StealthBrowser:
                 _print("Could not detect Chrome version, letting undetected-chromedriver decide.")
 
             uc_kwargs = {
-                "options": uc_options,
+                "options": options,
                 "use_subprocess": True,
             }
             if version_main:
@@ -151,8 +157,11 @@ class StealthBrowser:
     
     def _get_page_source_safe(self) -> str:
         """Safely get page source, returning empty string if None or error."""
+        driver = self.driver
+        if not driver:
+            return ""
         try:
-            source = self.driver.page_source
+            source = driver.page_source
             return source if source else ""
         except Exception:
             return ""
@@ -517,11 +526,11 @@ class StealthBrowser:
             pass
         return None
     
-    def random_delay(self, min_sec: float = None, max_sec: float = None):
+    def random_delay(self, min_sec: Optional[float] = None, max_sec: Optional[float] = None):
         """Human-like random delay between actions."""
         min_sec = min_sec if min_sec is not None else config.MIN_DELAY
         max_sec = max_sec if max_sec is not None else config.MAX_DELAY
-        delay = random.uniform(min_sec, max_sec)
+        delay = random.uniform(float(min_sec), float(max_sec))
         time.sleep(delay)
     
     def human_scroll(self, scroll_pause: float = 0.5):

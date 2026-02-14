@@ -47,12 +47,16 @@ jobs:
 
       - name: Install Google Chrome
         id: chrome
-        uses: browser-actions/setup-chrome@v1
+        uses: browser-actions/setup-chrome@v2
+        with:
+          install-chromedriver: true
 
       - name: Export Chrome path
         run: |
           echo "CHROME_PATH=${{ steps.chrome.outputs.chrome-path }}" >> "$GITHUB_ENV"
+          echo "CHROMEDRIVER_PATH=${{ steps.chrome.outputs.chromedriver-path }}" >> "$GITHUB_ENV"
           echo "Chrome path: ${{ steps.chrome.outputs.chrome-path }}"
+          echo "ChromeDriver path: ${{ steps.chrome.outputs.chromedriver-path }}"
 
       - name: Build .env from GitHub Secrets
         env:
@@ -96,8 +100,12 @@ jobs:
         run: |
           python --version
           echo "CHROME_PATH=${CHROME_PATH}"
+          echo "CHROMEDRIVER_PATH=${CHROMEDRIVER_PATH}"
           if [ -n "${CHROME_PATH}" ]; then
             "${CHROME_PATH}" --version || true
+          fi
+          if [ -n "${CHROMEDRIVER_PATH}" ]; then
+            "${CHROMEDRIVER_PATH}" --version || true
           fi
           google-chrome --version || true
           python - <<'PY'
