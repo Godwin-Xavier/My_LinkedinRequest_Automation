@@ -95,6 +95,10 @@ jobs:
       - name: Preflight diagnostics
         run: |
           python --version
+          echo "CHROME_PATH=${CHROME_PATH}"
+          if [ -n "${CHROME_PATH}" ]; then
+            "${CHROME_PATH}" --version || true
+          fi
           google-chrome --version || true
           python - <<'PY'
           from config import config

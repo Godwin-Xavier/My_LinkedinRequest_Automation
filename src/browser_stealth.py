@@ -12,6 +12,7 @@ from typing import Optional
 
 import undetected_chromedriver as uc
 from selenium import webdriver
+from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -30,9 +31,9 @@ def _print(msg: str):
 class StealthBrowser:
     """Stealth Chrome browser with human-like behavior."""
     
-    def __init__(self, headless: bool = None):
+    def __init__(self, headless: Optional[bool] = None):
         self.headless = headless if headless is not None else config.HEADLESS
-        self.driver: Optional[uc.Chrome] = None
+        self.driver: Optional[WebDriver] = None
     
     def _get_chrome_major_version(self, chrome_path: Optional[str] = None) -> Optional[int]:
         """Detect installed Chrome major version to prevent driver mismatch."""
@@ -78,9 +79,12 @@ class StealthBrowser:
 
         return None
 
-    def start(self) -> uc.Chrome:
+    def start(self) -> WebDriver:
         """Initialize and return stealth Chrome driver."""
-        options = uc.ChromeOptions()
+        running_in_github_actions = os.getenv("GITHUB_ACTIONS") == "true"
+        selenium_options = webdriver.ChromeOptions() if running_in_github_actions else None
+        uc_options = uc.ChromeOptions() if not running_in_github_actions else None
+        options = selenium_options or uc_options
 
         chrome_path = (
             os.getenv("CHROME_PATH")
@@ -109,33 +113,28 @@ class StealthBrowser:
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
         )
         
-        version_main = self._get_chrome_major_version(chrome_path)
-        if version_main:
-            _print(f"Detected Chrome version: {version_main}")
+        # In GitHub Actions, prefer Selenium Manager directly.
+        # UC often lags behind the fast-moving Chrome versions on hosted runners.
+        if running_in_github_actions:
+            _print("GitHub Actions detected: using Selenium Manager Chrome driver")
+            self.driver = webdriver.Chrome(options=selenium_options)
         else:
-            _print("Could not detect Chrome version, letting undetected-chromedriver decide.")
-
-        uc_kwargs = {
-            "options": options,
-            # More stable in CI runners.
-            "use_subprocess": os.getenv("GITHUB_ACTIONS") != "true",
-        }
-        if version_main:
-            uc_kwargs["version_main"] = version_main
-        if chrome_path:
-            uc_kwargs["browser_executable_path"] = chrome_path
-
-        try:
-            self.driver = uc.Chrome(**uc_kwargs)
-        except Exception as e:
-            # CI fallback: if UC and Chrome versions drift, use Selenium Manager
-            # which downloads a matching chromedriver automatically.
-            if os.getenv("GITHUB_ACTIONS") == "true":
-                _print(f"undetected_chromedriver startup failed: {e}")
-                _print("Falling back to Selenium Manager Chrome driver...")
-                self.driver = webdriver.Chrome(options=options)
+            version_main = self._get_chrome_major_version(chrome_path)
+            if version_main:
+                _print(f"Detected Chrome version: {version_main}")
             else:
-                raise
+                _print("Could not detect Chrome version, letting undetected-chromedriver decide.")
+
+            uc_kwargs = {
+                "options": uc_options,
+                "use_subprocess": True,
+            }
+            if version_main:
+                uc_kwargs["version_main"] = version_main
+            if chrome_path:
+                uc_kwargs["browser_executable_path"] = chrome_path
+
+            self.driver = uc.Chrome(**uc_kwargs)
         
         # Apply selenium-stealth
         stealth(
