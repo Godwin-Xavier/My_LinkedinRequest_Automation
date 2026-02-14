@@ -52,23 +52,13 @@ class LinkedInClient:
 
     # Recruiter-related keywords for search (fallback when Gemini unavailable)
     RECRUITER_KEYWORDS = [
+        "Recruiter",
         "Senior Recruiter",
-        "Tech Recruiter",
         "Technical Recruiter",
-        "IT Recruiter",
-        "Talent Acquisition",
-        "Talent Acquisition Manager",
+        "Talent Acquisition Recruiter",
         "Staffing Consultant",
         "Recruitment Consultant",
-        "Hiring Manager",
-        "HR Recruiter",
-        "Executive Recruiter",
-        "Headhunter",
-        "Engineering Recruiter",
-        "Software Recruiter",
-        "Cloud Technology Recruiter",
-        "AI ML Recruiter",
-        "Technical Hiring Manager",
+        "Hiring Specialist",
     ]
 
     def __init__(self, browser: StealthBrowser, search_generator=None):

@@ -20,29 +20,40 @@ from config import config
 
 class RecruiterSearchGenerator:
     """Generates diverse recruiter search queries using AI."""
+
+    ROLE_KEYWORDS = [
+        "Senior Recruiter",
+        "Technical Recruiter",
+        "Recruitment Consultant",
+        "Staffing Consultant",
+        "Talent Acquisition Recruiter",
+        "Hiring Specialist",
+        "Recruiter",
+    ]
     
     # Fallback queries focused on US, Canada, Australia
     FALLBACK_QUERIES = [
-        ("Senior Technical Recruiter", "United States"),
-        ("Tech Talent Acquisition", "United States"),
-        ("IT Recruitment Consultant", "Canada"),
-        ("Software Engineer Recruiter", "Australia"),
-        ("Talent Acquisition Manager", "United States"),
-        ("Staffing Consultant IT", "United States"),
-        ("Talent Acquisition Specialist", "Canada"),
-        ("Recruitment Manager Tech", "Australia"),
-        ("Engineering Recruiter", "United States"),
-        ("Developer Recruiter", "United States"),
-        ("Cloud Technology Recruiter", "Canada"),
-        ("AI ML Recruiter", "United States"),
-        ("Senior Recruiter Technology", "Australia"),
-        ("Technical Hiring Manager", "Canada"),
-        ("Headhunter Technology", "United States"),
-        ("SaaS Recruiter", "Australia"),
-        ("Executive Recruiter IT", "United States"),
-        ("HR Tech Recruiter", "Canada"),
-        ("Cyber Security Recruiter", "United States"),
-        ("Data Engineering Recruiter", "Australia"),
+        ("Recruiter", "United States"),
+        ("Senior Recruiter", "United States"),
+        ("Technical Recruiter", "United States"),
+        ("Recruitment Consultant", "United States"),
+        ("Staffing Consultant", "United States"),
+        ("Talent Acquisition Recruiter", "United States"),
+        ("Hiring Specialist", "United States"),
+        ("Recruiter", "Canada"),
+        ("Senior Recruiter", "Canada"),
+        ("Technical Recruiter", "Canada"),
+        ("Recruitment Consultant", "Canada"),
+        ("Staffing Consultant", "Canada"),
+        ("Talent Acquisition Recruiter", "Canada"),
+        ("Hiring Specialist", "Canada"),
+        ("Recruiter", "Australia"),
+        ("Senior Recruiter", "Australia"),
+        ("Technical Recruiter", "Australia"),
+        ("Recruitment Consultant", "Australia"),
+        ("Staffing Consultant", "Australia"),
+        ("Talent Acquisition Recruiter", "Australia"),
+        ("Hiring Specialist", "Australia"),
     ]
     
     def __init__(self):
@@ -68,18 +79,18 @@ class RecruiterSearchGenerator:
     def _generate_ai_queries(self, count: int) -> List[tuple]:
         """Use Gemini to generate search queries."""
         locations = ", ".join(config.PRIORITY_LOCATIONS)
-        
-        prompt = f"""Generate {count} unique LinkedIn search queries to find tech recruiters.
+        allowed_roles = ", ".join(self.ROLE_KEYWORDS)
+
+        prompt = f"""Generate {count} unique LinkedIn search queries to find hiring professionals.
 
 Requirements:
-- Target: Senior Recruiters, Technical Recruiters, IT Staffing Consultants, Talent Acquisition professionals
-- Industries: Software, IT, Technology, Cloud, AI/ML, Fintech, SaaS, Cybersecurity, Data Engineering
+- Use ONLY these role keywords: {allowed_roles}
 - Locations to prioritize: {locations}
-- Queries should be diverse and specific
-- Each query should use a different combination of role title and location
+- Keyword should be role-focused only (no skills, no tech stack, no industry buzzwords)
+- Do NOT include terms like developer, engineering, SaaS, cloud, AI/ML, cybersecurity, or data.
 
 Return ONLY a JSON array of objects with "keyword" and "location" fields.
-Example: [{{"keyword": "Senior Technical Recruiter", "location": "United States"}}]
+Example: [{{"keyword": "Technical Recruiter", "location": "United States"}}]
 
 Generate {count} unique combinations:"""
 
@@ -94,8 +105,46 @@ Generate {count} unique combinations:"""
         json_match = re.search(r'\[.*\]', text, re.DOTALL)
         if json_match:
             queries_data = json.loads(json_match.group())
-            return [(q["keyword"], q["location"]) for q in queries_data]
-        
+            normalized = []
+            seen = set()
+            valid_locations = set(config.PRIORITY_LOCATIONS)
+
+            for item in queries_data:
+                raw_keyword = str(item.get("keyword", "")).strip()
+                raw_location = str(item.get("location", "")).strip()
+                if not raw_keyword:
+                    continue
+
+                keyword_lower = raw_keyword.lower()
+                canonical_keyword = None
+                for role in self.ROLE_KEYWORDS:
+                    role_lower = role.lower()
+                    if role_lower in keyword_lower or keyword_lower in role_lower:
+                        canonical_keyword = role
+                        break
+
+                if not canonical_keyword:
+                    continue
+
+                location = raw_location if raw_location in valid_locations else random.choice(config.PRIORITY_LOCATIONS)
+                pair = (canonical_keyword, location)
+                if pair not in seen:
+                    seen.add(pair)
+                    normalized.append(pair)
+
+            if normalized:
+                if len(normalized) >= count:
+                    return normalized[:count]
+
+                fallback = self._get_fallback_queries(count)
+                for pair in fallback:
+                    if pair not in seen:
+                        normalized.append(pair)
+                        seen.add(pair)
+                    if len(normalized) >= count:
+                        break
+                return normalized
+
         return self._get_fallback_queries(count)
     
     def _get_fallback_queries(self, count: int) -> List[tuple]:
@@ -106,17 +155,8 @@ Generate {count} unique combinations:"""
     
     def get_query_for_location(self, location: str) -> str:
         """Get a random recruiter keyword for a specific location."""
-        keywords = [
-            "Senior Technical Recruiter",
-            "Tech Recruiter",
-            "IT Recruitment Consultant",
-            "Talent Acquisition Manager",
-            "Software Recruiter",
-            "Engineering Recruiter",
-            "Technology Hiring Manager",
-            "Staffing Consultant IT",
-        ]
-        return random.choice(keywords)
+        del location
+        return random.choice(self.ROLE_KEYWORDS)
 
 
 # Singleton instance
