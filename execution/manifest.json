@@ -1,0 +1,46 @@
+{
+    "tools": [
+        {
+            "name": "read_file",
+            "description": "Reads content from a trusted file path.",
+            "arguments": {
+                "path": "string"
+            },
+            "safe": true
+        },
+        {
+            "name": "write_file",
+            "description": "Writes content to a file in the output directory.",
+            "arguments": {
+                "path": "string",
+                "content": "string"
+            },
+            "safe": false
+        },
+        {
+            "name": "run_shell",
+            "description": "Executes a shell command in the Sandbox.",
+            "arguments": {
+                "command": "string"
+            },
+            "safe": false
+        },
+        {
+            "name": "query_memory",
+            "description": "Searches the SQLite database for past errors or context.",
+            "arguments": {
+                "query": "string"
+            },
+            "safe": true
+        },
+        {
+            "name": "update_recap",
+            "description": "Updates the persistent RECAP.json with new learnings or task status.",
+            "arguments": {
+                "entry": "string",
+                "category": "string"
+            },
+            "safe": true
+        }
+    ]
+}

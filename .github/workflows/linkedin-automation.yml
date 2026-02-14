@@ -1,0 +1,121 @@
+name: LinkedIn Automation
+
+on:
+  schedule:
+    - cron: "30 3 * * *" # 09:00 IST daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linkedin-automation-daily
+  cancel-in-progress: false
+
+jobs:
+  outreach:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      PYTHONUNBUFFERED: "1"
+      TZ: Asia/Kolkata
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure data directory exists
+        run: mkdir -p data
+
+      - name: Restore invite database cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/agent_state.db
+            data/agent_state.db-shm
+            data/agent_state.db-wal
+          key: linkedin-db-${{ github.run_id }}
+          restore-keys: |
+            linkedin-db-
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Google Chrome
+        uses: browser-actions/setup-chrome@v1
+
+      - name: Build .env from GitHub Secrets
+        env:
+          LINKEDIN_LI_AT: ${{ secrets.LINKEDIN_LI_AT }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          required = ["LINKEDIN_LI_AT", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"]
+          missing = [name for name in required if not os.getenv(name)]
+          if missing:
+              raise SystemExit(f"Missing required GitHub secrets: {', '.join(missing)}")
+
+          lines = [
+              f"LINKEDIN_LI_AT={os.environ['LINKEDIN_LI_AT']}",
+              f"TELEGRAM_BOT_TOKEN={os.environ['TELEGRAM_BOT_TOKEN']}",
+              f"TELEGRAM_CHAT_ID={os.environ['TELEGRAM_CHAT_ID']}",
+              f"GEMINI_API_KEY={os.getenv('GEMINI_API_KEY', '')}",
+              "HEADLESS=true",
+              "DAILY_INVITE_LIMIT=14",
+              "SCHEDULE_TIME=09:00",
+              "PRIORITY_LOCATIONS=United States,Canada,Australia",
+              "MIN_DELAY=3",
+              "MAX_DELAY=8",
+          ]
+
+          Path('.env').write_text("\n".join(lines) + "\n", encoding='utf-8')
+          print("Created .env for automation run")
+          PY
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run outreach now
+        run: python main.py --run-now
+
+      - name: Save invite database cache
+        if: always() && hashFiles('data/agent_state.db') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/agent_state.db
+            data/agent_state.db-shm
+            data/agent_state.db-wal
+          key: linkedin-db-${{ github.run_id }}
+
+      - name: Telegram fallback on workflow failure
+        if: failure()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GH_REPO: ${{ github.repository }}
+          GH_RUN_ID: ${{ github.run_id }}
+          GH_REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "Telegram fallback skipped (missing secrets)."
+            exit 0
+          fi
+
+          RUN_URL="https://github.com/${GH_REPO}/actions/runs/${GH_RUN_ID}"
+          MSG="LinkedIn Automation workflow failed on ${GH_REF_NAME}. Check run: ${RUN_URL}"
+
+          curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${MSG}" \
+            --data-urlencode "disable_web_page_preview=true"

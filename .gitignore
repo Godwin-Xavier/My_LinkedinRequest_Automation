@@ -1,0 +1,40 @@
+# LinkedIn Recruiter Outreach Automation
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment files with secrets
+.env
+
+# Database files (keep locally, don't commit)
+data/agent_state.db
+data/agent_state.db-wal
+data/agent_state.db-shm
+
+# Cookie exports
+cookies.json
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Chrome
+chromedriver
+chrome-linux/

@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  linkedin-automation:
+    build: .
+    container_name: linkedin-recruiter-outreach
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Kolkata
+    env_file:
+      - .env
+    volumes:
+      # Persist database across restarts
+      - ./data:/app/data
+    # For debugging - run with visible browser
+    # Uncomment the following for local testing with display
+    # environment:
+    #   - DISPLAY=:99
+    # depends_on:
+    #   - xvfb
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+  # Optional: Run a single execution for testing
+  # docker-compose run --rm linkedin-automation python main.py --run-now --dry-run
