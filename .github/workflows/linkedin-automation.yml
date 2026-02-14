@@ -74,8 +74,22 @@ jobs:
           if missing:
               raise SystemExit(f"Missing required GitHub secrets: {', '.join(missing)}")
 
+          li_at = os.environ["LINKEDIN_LI_AT"].strip()
+          if (li_at.startswith('"') and li_at.endswith('"')) or (li_at.startswith("'") and li_at.endswith("'")):
+              li_at = li_at[1:-1].strip()
+          if li_at.lower().startswith("li_at="):
+              li_at = li_at.split("=", 1)[1]
+          if ";" in li_at:
+              li_at = li_at.split(";", 1)[0]
+          li_at = li_at.strip()
+
+          if not li_at:
+              raise SystemExit("LINKEDIN_LI_AT secret is blank after normalization")
+
+          print(f"LINKEDIN_LI_AT normalized length: {len(li_at)}")
+
           lines = [
-              f"LINKEDIN_LI_AT={os.environ['LINKEDIN_LI_AT']}",
+              f"LINKEDIN_LI_AT={li_at}",
               f"TELEGRAM_BOT_TOKEN={os.environ['TELEGRAM_BOT_TOKEN']}",
               f"TELEGRAM_CHAT_ID={os.environ['TELEGRAM_CHAT_ID']}",
               f"GEMINI_API_KEY={os.getenv('GEMINI_API_KEY', '')}",
@@ -113,6 +127,8 @@ jobs:
           print(f"HEADLESS={config.HEADLESS}")
           print(f"DAILY_INVITE_LIMIT={config.DAILY_INVITE_LIMIT}")
           print(f"PRIORITY_LOCATIONS={config.PRIORITY_LOCATIONS}")
+          print(f"LINKEDIN_LI_AT length={len(config.LINKEDIN_LI_AT)}")
+          print(f"LINKEDIN_LI_AT starts_with_li_at={config.LINKEDIN_LI_AT.lower().startswith('li_at=')}")
           errs = config.validate()
           print(f"Config validation errors={errs}")
           PY

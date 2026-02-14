@@ -80,6 +80,25 @@ class StealthBrowser:
 
         return None
 
+    @staticmethod
+    def _normalize_li_at_value(raw_value: str) -> str:
+        """Normalize li_at cookie input from env/secrets/UI copy-paste."""
+        value = (raw_value or "").strip()
+
+        # Remove wrapping quotes commonly added while storing secrets.
+        if (value.startswith('"') and value.endswith('"')) or (
+            value.startswith("'") and value.endswith("'")
+        ):
+            value = value[1:-1].strip()
+
+        # Support values pasted as "li_at=<token>; Path=/; ...".
+        if value.lower().startswith("li_at="):
+            value = value.split("=", 1)[1]
+        if ";" in value:
+            value = value.split(";", 1)[0]
+
+        return value.strip()
+
     def start(self) -> WebDriver:
         """Initialize and return stealth Chrome driver."""
         running_in_github_actions = os.getenv("GITHUB_ACTIONS") == "true"
@@ -252,8 +271,12 @@ class StealthBrowser:
         """Simple LinkedIn login using just the li_at cookie value."""
         if not self.driver:
             raise RuntimeError("Browser not started. Call start() first.")
-        
-        if not li_at_value:
+
+        normalized_li_at = self._normalize_li_at_value(li_at_value)
+        if normalized_li_at != (li_at_value or ""):
+            _print("Normalized LINKEDIN_LI_AT format before injection")
+
+        if not normalized_li_at:
             _print("LINKEDIN_LI_AT cookie value is empty!")
             return False
         
@@ -269,7 +292,7 @@ class StealthBrowser:
         try:
             self.driver.add_cookie({
                 'name': 'li_at',
-                'value': li_at_value,
+                'value': normalized_li_at,
                 'domain': '.linkedin.com'
             })
         except Exception as e:
@@ -307,7 +330,7 @@ class StealthBrowser:
                             self.random_delay(1, 2)
                             self.driver.add_cookie({
                                 'name': 'li_at',
-                                'value': li_at_value,
+                                'value': normalized_li_at,
                                 'domain': '.linkedin.com'
                             })
                             self.driver.get(verify_url)
