@@ -103,6 +103,7 @@ class StealthBrowser:
         """Initialize and return stealth Chrome driver."""
         running_in_github_actions = os.getenv("GITHUB_ACTIONS") == "true"
         options = webdriver.ChromeOptions()
+        options.page_load_strategy = "eager"
 
         chrome_path = (
             os.getenv("CHROME_PATH")
@@ -171,6 +172,13 @@ class StealthBrowser:
             renderer="Intel Iris OpenGL Engine",
             fix_hairline=True,
         )
+
+        # Prevent indefinite hangs on slow/blocked page loads in CI.
+        try:
+            self.driver.set_page_load_timeout(60)
+            self.driver.set_script_timeout(60)
+        except Exception:
+            pass
         
         return self.driver
     
