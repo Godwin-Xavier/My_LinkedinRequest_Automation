@@ -190,11 +190,11 @@ class LinkedInClient:
     # Search query generation
     # ------------------------------------------------------------------
 
-    def _get_search_queries(self) -> List[tuple]:
-        """Get search queries - uses Gemini AI if available, falls back to static list."""
+    def _get_search_queries(self, max_queries: int = 9) -> List[tuple]:
+        """Get role-focused search queries with a capped query count."""
         if self.search_generator:
             try:
-                queries = self.search_generator.generate_queries(count=15)
+                queries = self.search_generator.generate_queries(count=max_queries)
                 if queries:
                     _print(f"Generated {len(queries)} search queries")
                     return queries
@@ -211,7 +211,7 @@ class LinkedInClient:
             for location in locations:
                 queries.append((keyword, location))
         random.shuffle(queries)
-        return queries
+        return queries[:max_queries]
 
     # ------------------------------------------------------------------
     # Core v2: Search-page-based connect flow
@@ -903,7 +903,8 @@ class LinkedInClient:
             "errors": [],
         }
 
-        search_queries = self._get_search_queries()
+        # Keep query volume intentionally small to stay role-focused and avoid broad probing.
+        search_queries = self._get_search_queries(max_queries=9)
         queries_used = []
         total_sent = 0
         follow_only_queries = 0
@@ -945,8 +946,8 @@ class LinkedInClient:
                 _print(f"\nDaily target reached! Sent {total_sent} invites.")
                 break
 
-            # Delay between different search queries (20-40 seconds)
-            self.browser.random_delay(20, 40)
+            # Delay between different search queries.
+            self.browser.random_delay(10, 18)
 
         if results["sent"] == 0 and follow_only_queries > 0:
             follow_only_msg = (
