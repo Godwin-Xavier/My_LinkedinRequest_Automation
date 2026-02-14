@@ -110,7 +110,9 @@ class TelegramNotifier:
                 safe_error = html_mod.escape(self._sanitize_text(error)[:50])
                 message += f"- {safe_error}\n"
         
-        if results.get('sent', 0) > 0:
+        if results.get('errors'):
+            message += "\n<b>Status: Error</b>"
+        elif results.get('sent', 0) > 0:
             message += "\n<b>Status: Success</b>"
         elif results.get('failed', 0) > 0:
             message += "\n<b>Status: Partial Failure</b>"

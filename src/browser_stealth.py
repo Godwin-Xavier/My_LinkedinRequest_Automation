@@ -6,9 +6,12 @@ import random
 import sys
 import time
 import os
+import re
+import subprocess
 from typing import Optional
 
 import undetected_chromedriver as uc
+from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -31,31 +34,48 @@ class StealthBrowser:
         self.headless = headless if headless is not None else config.HEADLESS
         self.driver: Optional[uc.Chrome] = None
     
-    def _get_chrome_major_version(self) -> Optional[int]:
-        """Detect installed Chrome major version on Windows to prevent driver mismatch."""
-        import platform
-        if platform.system() != "Windows":
-            return None
-            
+    def _get_chrome_major_version(self, chrome_path: Optional[str] = None) -> Optional[int]:
+        """Detect installed Chrome major version to prevent driver mismatch."""
+
+        # 1) Prefer explicit browser path if available (works in CI/Linux/Windows).
+        if chrome_path:
+            try:
+                output = subprocess.check_output(
+                    [chrome_path, "--version"],
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    timeout=10,
+                )
+                match = re.search(r"(\d+)\.", output)
+                if match:
+                    return int(match.group(1))
+            except Exception as e:
+                _print(f"Warning: Could not detect Chrome version from binary: {e}")
+
+        # 2) Windows registry fallback for local runs without explicit path.
         try:
-            import winreg
-            try:
-                key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Google\Chrome\BLBeacon")
-                version, _ = winreg.QueryValueEx(key, "version")
-                return int(version.split(".")[0])
-            except FileNotFoundError:
-                pass
-            
-            try:
-                key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Google Chrome")
-                version, _ = winreg.QueryValueEx(key, "DisplayVersion")
-                return int(version.split(".")[0])
-            except FileNotFoundError:
-                pass
-                
+            import platform
+            if platform.system() == "Windows":
+                import winreg
+                try:
+                    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Google\Chrome\BLBeacon")
+                    version, _ = winreg.QueryValueEx(key, "version")
+                    return int(version.split(".")[0])
+                except FileNotFoundError:
+                    pass
+
+                try:
+                    key = winreg.OpenKey(
+                        winreg.HKEY_LOCAL_MACHINE,
+                        r"SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Google Chrome",
+                    )
+                    version, _ = winreg.QueryValueEx(key, "DisplayVersion")
+                    return int(version.split(".")[0])
+                except FileNotFoundError:
+                    pass
         except Exception as e:
-            _print(f"Warning: Could not detect Chrome version: {e}")
-            
+            _print(f"Warning: Could not detect Chrome version from registry: {e}")
+
         return None
 
     def start(self) -> uc.Chrome:
@@ -89,7 +109,7 @@ class StealthBrowser:
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
         )
         
-        version_main = self._get_chrome_major_version()
+        version_main = self._get_chrome_major_version(chrome_path)
         if version_main:
             _print(f"Detected Chrome version: {version_main}")
         else:
@@ -105,7 +125,17 @@ class StealthBrowser:
         if chrome_path:
             uc_kwargs["browser_executable_path"] = chrome_path
 
-        self.driver = uc.Chrome(**uc_kwargs)
+        try:
+            self.driver = uc.Chrome(**uc_kwargs)
+        except Exception as e:
+            # CI fallback: if UC and Chrome versions drift, use Selenium Manager
+            # which downloads a matching chromedriver automatically.
+            if os.getenv("GITHUB_ACTIONS") == "true":
+                _print(f"undetected_chromedriver startup failed: {e}")
+                _print("Falling back to Selenium Manager Chrome driver...")
+                self.driver = webdriver.Chrome(options=options)
+            else:
+                raise
         
         # Apply selenium-stealth
         stealth(
