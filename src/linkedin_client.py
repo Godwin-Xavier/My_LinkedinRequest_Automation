@@ -224,20 +224,22 @@ class LinkedInClient:
     # ------------------------------------------------------------------
 
     def _build_search_url(self, keyword: str, location: Optional[str] = None) -> str:
-        """Build LinkedIn people search URL."""
-        encoded_keyword = quote(keyword)
+        """
+        Build LinkedIn people search URL.
+        Only uses 'keywords' to reduce tracking parameter overhead.
+        """
+        import urllib.parse
+        
+        # Combine keyword and location into a single query for simpler URL
+        # "Technical Recruiter United States" works better than separate filters
+        query = keyword
+        if location and location.lower() != "worldwide":
+            query = f"{keyword} {location}"
+            
         params = [
-            f"keywords={encoded_keyword}",
-            "origin=SWITCH_SEARCH_VERTICAL",
-            # Force 2nd-degree network first to avoid mostly Follow-only results.
-            "network=%5B%22S%22%5D",
+            f"keywords={urllib.parse.quote(query)}",
         ]
-
-        if location:
-            geo_id = self._get_geo_urn(location)
-            if geo_id:
-                params.append(f"geoUrn=%5B%22{geo_id}%22%5D")
-
+        
         return "https://www.linkedin.com/search/results/people/?" + "&".join(params)
 
     def _navigate_to_search(self, keyword: str, location: Optional[str] = None) -> bool:

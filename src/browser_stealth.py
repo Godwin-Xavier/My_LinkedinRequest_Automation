@@ -236,13 +236,8 @@ class StealthBrowser:
     
     def safe_navigate(self, url: str, max_retries: int = 3) -> bool:
         """
-        Navigate to a URL with built-in rate limit handling (429/Redirects).
+        Navigate to a URL with built-in rate limit handling (429/Redirects) and timeout protection.
         Uses exponential backoff if rate limited.
-
-        IMPORTANT: Only check for rate-limit indicators in the URL or in very
-        specific page text patterns.  Generic words like "challenge",
-        "verification", "checkpoint" appear in normal LinkedIn JavaScript and
-        will cause false positives if matched against the full page source.
         """
         if not self.driver:
             raise RuntimeError("Browser not started")
@@ -252,9 +247,23 @@ class StealthBrowser:
         for attempt in range(max_retries + 1):
             try:
                 _print(f"Navigating to: {url[:100]}...")
-                self.driver.get(url)
                 
-                # Small delay to let page render
+                # Set a reasonable timeout (e.g., 30s) to catch infinite loading
+                self.driver.set_page_load_timeout(30)
+                
+                try:
+                    self.driver.get(url)
+                except Exception as e:
+                    # Catch timeout logic specifically if possible, or general exception
+                    # If it's a timeout, stopped loading and proceed to check content
+                    _print(f"  Navigation timed out/error: {e}")
+                    try:
+                        self.driver.execute_script("window.stop();")
+                        _print("  Stopped loading (window.stop()). checking page content...")
+                    except:
+                        pass
+                
+                # Small delay to let page stabilize
                 time.sleep(random.uniform(2, 4))
                 
                 current_url = self.driver.current_url.lower()
@@ -265,11 +274,15 @@ class StealthBrowser:
                     "checkpoint/lg",
                     "/checkpoint/",
                     "/authwall",
+                    "login?fromsignin=true"
                 ])
                 
+                # If we are bounced to login or feed, that's a failure for search
+                if "/feed" in current_url and "search" in url:
+                     _print("  Redirected to /feed (Search failed)")
+                     url_blocked = True
+                
                 # --- Check page text for SPECIFIC rate-limit error strings ---
-                # Only check the <title> and the first 2000 chars of visible text,
-                # NOT the full page_source (which is 1MB+ of obfuscated JS).
                 page_title = (self.driver.title or "").lower()
                 body_text = ""
                 try:
@@ -284,6 +297,7 @@ class StealthBrowser:
                                        "too many requests",
                                        "unusual traffic",
                                        "temporarily restricted",
+                                       "verify it's you",
                                    ])
                 
                 if url_blocked or text_blocked:
