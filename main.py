@@ -5,6 +5,7 @@ Handles scheduling and orchestration of daily outreach.
 import argparse
 import sys
 import traceback
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -95,11 +96,49 @@ def run_outreach(dry_run: bool = False, limit: Optional[int] = None):
         browser = StealthBrowser(headless=config.HEADLESS)
         browser.start()
         
-        # Inject cookies and verify login
+        # Inject cookies and verify login (with retry for transient interstitial/rate-limit pages).
         print("Logging in with li_at cookie...")
-        if not browser.login_with_cookie(config.LINKEDIN_LI_AT):
-            print("Failed to log in with provided cookie!")
+        login_ok = False
+        login_issue = ""
+        max_login_attempts = 3
+
+        for login_attempt in range(1, max_login_attempts + 1):
+            if browser.login_with_cookie(config.LINKEDIN_LI_AT):
+                login_ok = True
+                break
+
             login_issue = (getattr(browser, "last_login_issue", "") or "").strip()
+            issue_lower = login_issue.lower()
+            looks_transient = any(token in issue_lower for token in [
+                "rate-limited",
+                "temporarily",
+                "interstitial",
+                "redirect",
+                "too many requests",
+            ])
+
+            if looks_transient and login_attempt < max_login_attempts:
+                wait_seconds = 20 * login_attempt
+                print(
+                    f"Login attempt {login_attempt}/{max_login_attempts} failed with a transient block. "
+                    f"Retrying in {wait_seconds}s..."
+                )
+                time.sleep(wait_seconds)
+
+                # Restart browser between attempts to clear transient tab/session state.
+                try:
+                    browser.close()
+                except Exception:
+                    pass
+
+                browser = StealthBrowser(headless=config.HEADLESS)
+                browser.start()
+                continue
+
+            break
+
+        if not login_ok:
+            print("Failed to log in with provided cookie!")
             if login_issue:
                 results["errors"].append(login_issue)
             else:
@@ -108,11 +147,11 @@ def run_outreach(dry_run: bool = False, limit: Optional[int] = None):
                 "Cookie login failed before outreach search started. Refresh LINKEDIN_LI_AT and retry."
             )
             notifier.send_cookie_warning()
-            
+
             # Auto-offer Telegram login
             print("\nWould you like to refresh the cookie now via Telegram?")
             print("Run:  python main.py --refresh-cookie")
-            
+
             return results
         
         print("Successfully logged into LinkedIn")

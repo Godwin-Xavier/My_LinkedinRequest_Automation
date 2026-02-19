@@ -424,14 +424,37 @@ class StealthBrowser:
         verification_urls = [
             "https://www.linkedin.com/feed/",
             "https://www.linkedin.com/mynetwork/",
+            "https://www.linkedin.com/",
         ]
         
         page_loaded = False
+        verification_issue = ""
+        verification_error_indicators = [
+            "err_too_many_redirects",
+            "http error 429",
+            "too many requests",
+            "main-frame-error",
+            "neterror",
+            "this page isn't working",
+            "this site can't be reached",
+            "temporarily restricted",
+        ]
         for verify_url in verification_urls:
             _print(f"Navigating to {verify_url} to verify session...")
             try:
                 self.driver.get(verify_url)
                 self.random_delay(5, 8)
+
+                # If Chrome rendered an interstitial (redirect loop/429/network),
+                # try the next verification URL instead of accepting this page.
+                verify_source = self._get_page_source_safe().lower()
+                if any(indicator in verify_source for indicator in verification_error_indicators):
+                    verification_issue = (
+                        f"LinkedIn verification page returned an interstitial/error at {verify_url}."
+                    )
+                    _print("  Verification hit an interstitial/error page. Trying alternate URL...")
+                    continue
+
                 page_loaded = True
                 break
             except Exception as e:
@@ -454,6 +477,15 @@ class StealthBrowser:
                             })
                             self.driver.get(verify_url)
                             self.random_delay(5, 8)
+
+                            verify_source = self._get_page_source_safe().lower()
+                            if any(indicator in verify_source for indicator in verification_error_indicators):
+                                verification_issue = (
+                                    f"LinkedIn verification page returned an interstitial/error at {verify_url}"
+                                )
+                                _print("  Recovery tab still shows interstitial/error. Trying alternate URL...")
+                                continue
+
                             page_loaded = True
                             break
                     except Exception as recovery_err:
@@ -464,6 +496,22 @@ class StealthBrowser:
                     continue
         
         if not page_loaded:
+            if verification_issue:
+                _print("")
+                _print("=" * 70)
+                _print("LOGIN VERIFICATION BLOCKED: LinkedIn returned an interstitial page")
+                _print("=" * 70)
+                _print("LinkedIn responded with a redirect loop / rate-limit / network interstitial.")
+                _print("")
+                _print("Solutions:")
+                _print("  1. Wait 15-30 minutes and retry")
+                _print("  2. Use a cleaner IP (mobile hotspot/VPN)")
+                _print("  3. Refresh li_at cookie after waiting")
+                _print("=" * 70)
+                self.last_login_issue = verification_issue
+                self.save_debug_snapshot("login_verify_interstitial")
+                return False
+
             _print("")
             _print("=" * 70)
             _print("BROWSER CRASH: Chrome tab crashed during navigation")
