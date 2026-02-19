@@ -24,7 +24,7 @@ class Config:
     
     # AI
     GEMINI_API_KEY: str = ""
-    GEMINI_MODEL: str = "gemini-1.5-flash"
+    GEMINI_MODEL: str = "gemini-2.0-flash"
     
     # Automation
     DAILY_INVITE_LIMIT: int = 14
