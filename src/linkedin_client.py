@@ -306,11 +306,17 @@ class LinkedInClient:
             )
 
         body_text = ""
+        page_source = ""
         try:
             body = self.driver.find_element(By.TAG_NAME, "body")
-            body_text = (body.text or "").lower()[:5000]
+            body_text = (body.text or "").lower()[:15000]
         except Exception:
             pass
+
+        try:
+            page_source = self.browser._get_page_source_safe().lower()
+        except Exception:
+            page_source = ""
 
         empty_indicators = [
             "no results found",
@@ -319,7 +325,7 @@ class LinkedInClient:
             "expand your search",
             "no matching people",
         ]
-        if any(indicator in body_text for indicator in empty_indicators):
+        if any(indicator in body_text or indicator in page_source for indicator in empty_indicators):
             state["empty_results"] = True
             self._append_unique(
                 state["diagnostics"],
@@ -332,8 +338,15 @@ class LinkedInClient:
             "unusual traffic",
             "http error 429",
             "protect our members",
+            "err_too_many_requests",
+            "main-frame-error",
+            "neterror",
+            "this page isn't working",
+            "this site can't be reached",
+            "err_connection_timed_out",
+            "err_timed_out",
         ]
-        if any(indicator in body_text for indicator in rate_indicators):
+        if any(indicator in body_text or indicator in page_source for indicator in rate_indicators):
             state["rate_limited"] = True
             self._append_unique(
                 state["diagnostics"],
@@ -344,8 +357,9 @@ class LinkedInClient:
             "verify your identity",
             "let us know you're human",
             "security verification",
+            "captcha",
         ]
-        if any(indicator in body_text for indicator in challenge_indicators):
+        if any(indicator in body_text or indicator in page_source for indicator in challenge_indicators):
             state["session_lost"] = True
             self._append_unique(
                 state["diagnostics"],
@@ -372,6 +386,7 @@ class LinkedInClient:
         selectors = [
             "[data-chameleon-result-urn]",
             "div[data-view-name='search-entity-result-universal-template']",
+            "ul.reusable-search__entity-result-list > li",
             # Legacy fallbacks (in case LinkedIn reverts)
             "li.reusable-search__result-container",
             "div.entity-result",
@@ -389,6 +404,17 @@ class LinkedInClient:
             except TimeoutException:
                 _print(f"    -> Timeout (no match)")
                 continue
+
+        # Generic structural fallback: list items under main containing profile links.
+        try:
+            xpath_selector = "//main//li[.//a[contains(@href,'/in/')]]"
+            cards = self.driver.find_elements(By.XPATH, xpath_selector)
+            if cards:
+                _print(f"    -> Found {len(cards)} cards with XPath fallback")
+                return cards
+        except Exception:
+            pass
+
         return []
 
     def _extract_person_from_card(self, card) -> Optional[Dict]:
@@ -852,10 +878,15 @@ class LinkedInClient:
 
             try:
                 if not self.browser.is_logged_in():
-                    result["session_lost"] = True
-                    add_diagnostic(
-                        "LinkedIn session check failed while opening search results; cookie may be expired."
-                    )
+                    if page_state.get("session_lost"):
+                        result["session_lost"] = True
+                        add_diagnostic(
+                            "LinkedIn session check failed while opening search results; cookie may be expired."
+                        )
+                    else:
+                        add_diagnostic(
+                            "Could not confirm login state on this page; no direct login redirect was detected."
+                        )
             except Exception:
                 pass
 
@@ -911,10 +942,15 @@ class LinkedInClient:
 
                 try:
                     if not self.browser.is_logged_in():
-                        result["session_lost"] = True
-                        add_diagnostic(
-                            "LinkedIn session check failed while reading search results; refresh cookie if this repeats."
-                        )
+                        if page_state.get("session_lost"):
+                            result["session_lost"] = True
+                            add_diagnostic(
+                                "LinkedIn session check failed while reading search results; refresh cookie if this repeats."
+                            )
+                        else:
+                            add_diagnostic(
+                                "Login state could not be confirmed on this page; treating it as transient unless repeated."
+                            )
                 except Exception:
                     pass
                 break

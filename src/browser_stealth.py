@@ -293,20 +293,39 @@ class StealthBrowser:
                 # --- Check page text for SPECIFIC rate-limit error strings ---
                 page_title = (self.driver.title or "").lower()
                 body_text = ""
+                page_source = ""
                 try:
                     body = self.driver.find_element(By.TAG_NAME, "body")
-                    body_text = (body.text or "")[:2000].lower()
+                    body_text = (body.text or "").lower()[:12000]
                 except Exception:
                     pass
 
-                text_blocked = any(indicator in page_title or indicator in body_text
-                                   for indicator in [
-                                       "http error 429",
-                                       "too many requests",
-                                       "unusual traffic",
-                                       "temporarily restricted",
-                                       "verify it's you",
-                                   ])
+                try:
+                    page_source = self._get_page_source_safe().lower()
+                except Exception:
+                    page_source = ""
+
+                blocked_indicators = [
+                    "http error 429",
+                    "err_too_many_requests",
+                    "too many requests",
+                    "unusual traffic",
+                    "temporarily restricted",
+                    "verify it's you",
+                    "main-frame-error",
+                    "neterror",
+                    "this page isn't working",
+                    "this site can't be reached",
+                    "err_connection_timed_out",
+                    "err_timed_out",
+                    "access denied",
+                ]
+                text_blocked = any(
+                    indicator in page_title
+                    or indicator in body_text
+                    or indicator in page_source
+                    for indicator in blocked_indicators
+                )
                 
                 if url_blocked or text_blocked:
                     reason = "URL redirect" if url_blocked else "page text"

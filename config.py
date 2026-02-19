@@ -64,8 +64,8 @@ class Config:
         
         # AI
         config.GEMINI_API_KEY = env_vars.get("GEMINI_API_KEY", "")
-        # Updated to current stable model
-        config.GEMINI_MODEL = env_vars.get("GEMINI_MODEL", "gemini-1.5-flash").strip() or "gemini-1.5-flash"
+        # Keep defaults aligned with class-level stable model.
+        config.GEMINI_MODEL = env_vars.get("GEMINI_MODEL", cls.GEMINI_MODEL).strip() or cls.GEMINI_MODEL
         
         # Automation
         config.DAILY_INVITE_LIMIT = int(env_vars.get("DAILY_INVITE_LIMIT", "14"))
