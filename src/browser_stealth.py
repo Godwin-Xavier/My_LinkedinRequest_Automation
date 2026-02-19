@@ -158,11 +158,10 @@ class StealthBrowser:
         options.add_argument("--window-size=1920,1080")
         options.add_argument("--start-maximized")
         
-        # Realistic user agent
-        options.add_argument(
-            "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-        )
+        # Realistic user agent - REMOVED HARDCODED WINDOWS UA
+        # Let Chrome (or undetected-chromedriver) pick the natural UA for the platform.
+        # This prevents "OS Mismatch" detection (e.g. claiming Windows on Linux).
+        # options.add_argument("--user-agent=...") 
         
         # In GitHub Actions, prefer Selenium Manager directly.
         # UC often lags behind the fast-moving Chrome versions on hosted runners.
@@ -178,6 +177,7 @@ class StealthBrowser:
             self.driver = webdriver.Chrome(service=service, options=options)
         else:
             version_main = self._get_chrome_major_version(chrome_path)
+
             if version_main:
                 _print(f"Detected Chrome version: {version_main}")
             else:
@@ -194,12 +194,21 @@ class StealthBrowser:
 
             self.driver = uc.Chrome(**uc_kwargs)
         
+            self.driver = uc.Chrome(**uc_kwargs)
+        
+        # Determine platform for stealth
+        # On GitHub Actions (Linux), we want "Linux x86_64" to match the real OS.
+        # On Windows, "Win32".
+        import platform
+        system_os = platform.system()
+        stealth_platform = "Win32" if system_os == "Windows" else "Linux x86_64"
+        
         # Apply selenium-stealth
         stealth(
             self.driver,
             languages=["en-US", "en"],
             vendor="Google Inc.",
-            platform="Win32",
+            platform=stealth_platform,
             webgl_vendor="Intel Inc.",
             renderer="Intel Iris OpenGL Engine",
             fix_hairline=True,
@@ -479,6 +488,20 @@ class StealthBrowser:
         # Check if we landed on login/authwall page (cookie definitely expired)
         current_url = self.driver.current_url.lower()
         if any(x in current_url for x in ["/login", "/signin", "/authwall", "uas/login"]):
+            # Check for password field - indicates re-auth needed despite cookie
+            try:
+                pwd = self.driver.find_element(By.CSS_SELECTOR, "input[type='password']")
+                if pwd.is_displayed():
+                    _print("")
+                    _print("="*70)
+                    _print("PASSWORD RE-ENTRY REQUIRED: Session likely has a trust/fingerprint issue")
+                    _print("="*70)
+                    self.last_login_issue = "LinkedIn demanded password re-entry. Cookie identity is valid but session context is untrusted."
+                    self.save_debug_snapshot("password_reentry_required")
+                    return False
+            except Exception:
+                pass
+
             _print("")
             _print("="*70)
             _print("COOKIE EXPIRED: Redirected to login page")
