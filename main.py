@@ -23,8 +23,35 @@ from src.recruiter_search import search_generator
 IST = pytz.timezone('Asia/Kolkata')
 
 
+class TeeLogger:
+    """Writes to both stdout/stderr and a file."""
+    def __init__(self, filename):
+        self.terminal = sys.stdout
+        self.filename = filename
+        self.log_file = open(filename, "w", encoding="utf-8", buffering=1)  # Line buffered
+
+    def write(self, message):
+        self.terminal.write(message)
+        self.log_file.write(message)
+
+    def flush(self):
+        self.terminal.flush()
+        self.log_file.flush()
+
+    def close(self):
+        self.log_file.close()
+
+
 def run_outreach(dry_run: bool = False, limit: Optional[int] = None):
     """Execute the daily outreach routine."""
+    # Setup file logging
+    log_filename = "session_log.txt"
+    logger = TeeLogger(log_filename)
+    original_stdout = sys.stdout
+    original_stderr = sys.stderr
+    sys.stdout = logger
+    sys.stderr = logger
+
     print(f"\n{'='*50}")
     print(f"LinkedIn Outreach Started at {datetime.now(IST).strftime('%Y-%m-%d %H:%M:%S')} IST")
     print(f"{'='*50}\n")
@@ -136,7 +163,17 @@ def run_outreach(dry_run: bool = False, limit: Optional[int] = None):
         if browser:
             browser.close()
 
+        print("\nSending report to Telegram...")
         notifier.send_daily_summary(results)
+        
+        # Restore stdout/stderr and close log
+        sys.stdout = original_stdout
+        sys.stderr = original_stderr
+        logger.close()
+        
+        # Send the log file
+        print("Uploading session log to Telegram...")
+        notifier.send_log_file(log_filename, caption=f"Log: {datetime.now(IST).strftime('%Y-%m-%d %H:%M')}")
     
     return results
 

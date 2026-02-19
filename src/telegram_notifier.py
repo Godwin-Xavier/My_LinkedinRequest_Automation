@@ -213,5 +213,32 @@ Priority locations:
         return self.send_message(message)
 
 
+    def send_log_file(self, file_path: str, caption: str = "Execution Log") -> bool:
+        """Send a log file to Telegram."""
+        if not self.bot_token or not self.chat_id:
+            return False
+
+        async def _send_doc():
+            bot = Bot(token=self.bot_token)
+            async with bot:
+                try:
+                    with open(file_path, 'rb') as f:
+                        await bot.send_document(
+                            chat_id=self.chat_id,
+                            document=f,
+                            caption=caption
+                        )
+                    return True
+                except Exception as e:
+                    _print_safe(f"Failed to upload log file: {e}")
+                    return False
+
+        try:
+            return asyncio.run(_send_doc())
+        except Exception as e:
+            _print_safe(f"Telegram file upload failed: {e}")
+            return False
+
+
 # Singleton instance
 notifier = TelegramNotifier()
