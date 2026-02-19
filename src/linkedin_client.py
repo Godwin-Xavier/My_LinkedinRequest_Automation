@@ -379,7 +379,7 @@ class LinkedInClient:
         for selector in selectors:
             try:
                 _print(f"    Trying card selector: {selector}")
-                WebDriverWait(self.driver, 5).until(
+                WebDriverWait(self.driver, 15).until(
                     EC.presence_of_element_located((By.CSS_SELECTOR, selector))
                 )
                 cards = self.driver.find_elements(By.CSS_SELECTOR, selector)

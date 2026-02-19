@@ -252,8 +252,8 @@ class StealthBrowser:
             try:
                 _print(f"Navigating to: {url[:100]}...")
                 
-                # Set a reasonable timeout (e.g., 30s) to catch infinite loading
-                self.driver.set_page_load_timeout(30)
+                # Set a reasonable timeout (e.g., 60s) to catch infinite loading
+                self.driver.set_page_load_timeout(60)
                 
                 try:
                     self.driver.get(url)
