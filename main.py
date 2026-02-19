@@ -3,6 +3,7 @@ LinkedIn Recruiter Outreach Automation - Main Entry Point.
 Handles scheduling and orchestration of daily outreach.
 """
 import argparse
+import os
 import sys
 import traceback
 import time
@@ -100,7 +101,14 @@ def run_outreach(dry_run: bool = False, limit: Optional[int] = None):
         print("Logging in with li_at cookie...")
         login_ok = False
         login_issue = ""
-        max_login_attempts = 3
+        running_in_github_actions = os.getenv("GITHUB_ACTIONS") == "true"
+        max_login_attempts = config.LOGIN_MAX_ATTEMPTS
+        retry_base_delay = config.LOGIN_RETRY_BASE_DELAY
+
+        # Hosted runners are often rate-limited for LinkedIn; use stronger retry budget.
+        if running_in_github_actions:
+            max_login_attempts = max(max_login_attempts, 4)
+            retry_base_delay = max(retry_base_delay, 60)
 
         for login_attempt in range(1, max_login_attempts + 1):
             if browser.login_with_cookie(config.LINKEDIN_LI_AT):
@@ -118,7 +126,7 @@ def run_outreach(dry_run: bool = False, limit: Optional[int] = None):
             ])
 
             if looks_transient and login_attempt < max_login_attempts:
-                wait_seconds = 20 * login_attempt
+                wait_seconds = retry_base_delay * login_attempt
                 print(
                     f"Login attempt {login_attempt}/{max_login_attempts} failed with a transient block. "
                     f"Retrying in {wait_seconds}s..."
@@ -131,7 +139,14 @@ def run_outreach(dry_run: bool = False, limit: Optional[int] = None):
                 except Exception:
                     pass
 
-                browser = StealthBrowser(headless=config.HEADLESS)
+                backend_hint = "auto"
+                if running_in_github_actions and (
+                    "interstitial" in issue_lower or "redirect" in issue_lower
+                ):
+                    backend_hint = "uc"
+                    print("Switching retry browser backend to undetected-chromedriver...")
+
+                browser = StealthBrowser(headless=config.HEADLESS, driver_backend=backend_hint)
                 browser.start()
                 continue
 

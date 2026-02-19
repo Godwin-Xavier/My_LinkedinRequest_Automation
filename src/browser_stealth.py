@@ -33,10 +33,14 @@ def _print(msg: str):
 class StealthBrowser:
     """Stealth Chrome browser with human-like behavior."""
     
-    def __init__(self, headless: Optional[bool] = None):
+    def __init__(self, headless: Optional[bool] = None, driver_backend: str = "auto"):
         self.headless = headless if headless is not None else config.HEADLESS
         self.driver: Optional[WebDriver] = None
         self.last_navigation_issue: str = ""
+        self.driver_backend = (driver_backend or "auto").lower()
+        if self.driver_backend not in {"auto", "uc", "selenium"}:
+            self.driver_backend = "auto"
+        self.active_backend: str = ""
         
         # Ensure debug directory exists
         self.debug_dir = config.DATA_DIR / "debug"
@@ -129,6 +133,9 @@ class StealthBrowser:
         if ";" in value:
             value = value.split(";", 1)[0]
 
+        # Remove accidental internal whitespace/newlines from copy-paste.
+        value = re.sub(r"\s+", "", value)
+
         return value.strip()
 
     def start(self) -> WebDriver:
@@ -163,42 +170,90 @@ class StealthBrowser:
         # Increase window size for better layout/rendering
         options.add_argument("--window-size=1920,1080")
         options.add_argument("--start-maximized")
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option("useAutomationExtension", False)
+
+        if config.LINKEDIN_PROXY:
+            options.add_argument(f"--proxy-server={config.LINKEDIN_PROXY}")
+            _print("Using configured LinkedIn proxy server")
         
         # Realistic user agent - REMOVED HARDCODED WINDOWS UA
         # Let Chrome (or undetected-chromedriver) pick the natural UA for the platform.
         # This prevents "OS Mismatch" detection (e.g. claiming Windows on Linux).
         # options.add_argument("--user-agent=...") 
         
-        # In GitHub Actions, prefer Selenium Manager directly.
-        # UC often lags behind the fast-moving Chrome versions on hosted runners.
-        if running_in_github_actions:
-            _print("GitHub Actions detected: using Selenium Manager Chrome driver")
-            chromedriver_path = os.getenv("CHROMEDRIVER_PATH", "").strip()
-            if chromedriver_path:
-                _print(f"Using ChromeDriver binary: {chromedriver_path}")
-                service = ChromeService(executable_path=chromedriver_path)
+        def _start_uc_driver() -> bool:
+            try:
+                version_main = self._get_chrome_major_version(chrome_path)
+                if version_main:
+                    _print(f"Detected Chrome version: {version_main}")
+                else:
+                    _print("Could not detect Chrome version, letting undetected-chromedriver decide.")
+
+                uc_kwargs = {
+                    "options": options,
+                    "use_subprocess": True,
+                }
+                if version_main:
+                    uc_kwargs["version_main"] = version_main
+                if chrome_path:
+                    uc_kwargs["browser_executable_path"] = chrome_path
+
+                self.driver = uc.Chrome(**uc_kwargs)
+                self.active_backend = "uc"
+                _print("Started browser backend: undetected-chromedriver")
+                return True
+            except Exception as e:
+                _print(f"undetected-chromedriver startup failed: {type(e).__name__}: {e}")
+                return False
+
+        def _start_selenium_driver() -> bool:
+            try:
+                chromedriver_path = os.getenv("CHROMEDRIVER_PATH", "").strip()
+                if running_in_github_actions:
+                    _print("GitHub Actions detected: using Selenium Chrome driver")
+                if chromedriver_path:
+                    _print(f"Using ChromeDriver binary: {chromedriver_path}")
+                    service = ChromeService(executable_path=chromedriver_path)
+                else:
+                    _print("CHROMEDRIVER_PATH not set; falling back to Selenium Manager resolution")
+                    service = ChromeService()
+
+                self.driver = webdriver.Chrome(service=service, options=options)
+                self.active_backend = "selenium"
+                _print("Started browser backend: selenium-webdriver")
+                return True
+            except Exception as e:
+                _print(f"Selenium driver startup failed: {type(e).__name__}: {e}")
+                return False
+
+        startup_plan = []
+        if self.driver_backend == "uc":
+            startup_plan = ["uc"]
+        elif self.driver_backend == "selenium":
+            startup_plan = ["selenium"]
+        elif running_in_github_actions:
+            if config.PREFER_UC_IN_GHA:
+                startup_plan = ["uc", "selenium"]
+                _print("GitHub Actions detected: trying undetected-chromedriver first")
             else:
-                _print("CHROMEDRIVER_PATH not set; falling back to Selenium Manager resolution")
-                service = ChromeService()
-            self.driver = webdriver.Chrome(service=service, options=options)
+                startup_plan = ["selenium", "uc"]
+                _print("GitHub Actions detected: trying Selenium first")
         else:
-            version_main = self._get_chrome_major_version(chrome_path)
+            startup_plan = ["uc", "selenium"]
 
-            if version_main:
-                _print(f"Detected Chrome version: {version_main}")
-            else:
-                _print("Could not detect Chrome version, letting undetected-chromedriver decide.")
+        for backend in startup_plan:
+            if backend == "uc" and _start_uc_driver():
+                break
+            if backend == "selenium" and _start_selenium_driver():
+                break
 
-            uc_kwargs = {
-                "options": options,
-                "use_subprocess": True,
-            }
-            if version_main:
-                uc_kwargs["version_main"] = version_main
-            if chrome_path:
-                uc_kwargs["browser_executable_path"] = chrome_path
+        if not self.driver:
+            raise RuntimeError(
+                f"Failed to start Chrome driver (strategy: {self.driver_backend}/{startup_plan})"
+            )
 
-            self.driver = uc.Chrome(**uc_kwargs)
+        driver = self.driver
         
         # Determine platform for stealth
         # On GitHub Actions (Linux), we want "Linux x86_64" to match the real OS.
@@ -209,7 +264,7 @@ class StealthBrowser:
         
         # Apply selenium-stealth
         stealth(
-            self.driver,
+            driver,
             languages=["en-US", "en"],
             vendor="Google Inc.",
             platform=stealth_platform,
@@ -220,12 +275,12 @@ class StealthBrowser:
 
         # Prevent indefinite hangs on slow/blocked page loads in CI.
         try:
-            self.driver.set_page_load_timeout(60)
-            self.driver.set_script_timeout(60)
+            driver.set_page_load_timeout(60)
+            driver.set_script_timeout(60)
         except Exception:
             pass
         
-        return self.driver
+        return driver
     
     def _get_page_source_safe(self) -> str:
         """Safely get page source, returning empty string if None or error."""
@@ -397,21 +452,48 @@ class StealthBrowser:
         
         _print("Injecting li_at cookie...")
         try:
-            self.driver.add_cookie({
-                'name': 'li_at',
-                'value': normalized_li_at,
-                'domain': '.linkedin.com',
-                'path': '/',
-                'secure': True,
-                'httpOnly': True,
-            })
-            
+            injected = 0
+            for domain in [".linkedin.com", "www.linkedin.com"]:
+                payload = {
+                    'name': 'li_at',
+                    'value': normalized_li_at,
+                    'domain': domain,
+                    'path': '/',
+                    'secure': True,
+                    'httpOnly': True,
+                    'sameSite': 'None',
+                }
+                try:
+                    self.driver.add_cookie(payload)
+                    injected += 1
+                except Exception:
+                    # Some driver versions reject sameSite in add_cookie.
+                    payload.pop('sameSite', None)
+                    try:
+                        self.driver.add_cookie(payload)
+                        injected += 1
+                    except Exception as add_err:
+                        _print(f"  Cookie injection warning for domain '{domain}': {add_err}")
+
+            if injected == 0:
+                raise RuntimeError("Failed to set li_at cookie on LinkedIn domains")
+
             # Enforce Accept-Language to match stealth configuration
             # preventing locale-based redirects (e.g. to in.linkedin.com)
-            self.driver.execute_cdp_cmd('Network.setUserAgentOverride', {
-                "userAgent": self.driver.execute_script("return navigator.userAgent"),
-                "acceptLanguage": "en-US,en;q=0.9"
-            })
+            try:
+                self.driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+                    "userAgent": self.driver.execute_script("return navigator.userAgent"),
+                    "acceptLanguage": "en-US,en;q=0.9"
+                })
+            except Exception as cdp_err:
+                _print(f"  CDP language override warning: {cdp_err}")
+
+            # Warm a login route once so LinkedIn can bootstrap session cookies.
+            try:
+                self.driver.get("https://www.linkedin.com/login")
+                self.random_delay(1.5, 2.5)
+            except Exception:
+                pass
             
         except Exception as e:
             _print(f"Failed to inject cookie: {e}")
@@ -447,11 +529,23 @@ class StealthBrowser:
 
                 # If Chrome rendered an interstitial (redirect loop/429/network),
                 # try the next verification URL instead of accepting this page.
-                verify_source = self._get_page_source_safe().lower()
+                verify_source_raw = self._get_page_source_safe()
+                verify_source = verify_source_raw.lower()
                 if any(indicator in verify_source for indicator in verification_error_indicators):
+                    error_code = ""
+                    try:
+                        match = re.search(r'errorcode"\s*:\s*"([A-Z0-9_]+)"', verify_source_raw, re.IGNORECASE)
+                        if match:
+                            error_code = match.group(1)
+                    except Exception:
+                        pass
+
                     verification_issue = (
-                        f"LinkedIn verification page returned an interstitial/error at {verify_url}."
+                        f"LinkedIn verification page returned an interstitial/error at {verify_url}"
                     )
+                    if error_code:
+                        verification_issue += f" ({error_code})"
+                    verification_issue += "."
                     _print("  Verification hit an interstitial/error page. Trying alternate URL...")
                     continue
 
@@ -478,11 +572,22 @@ class StealthBrowser:
                             self.driver.get(verify_url)
                             self.random_delay(5, 8)
 
-                            verify_source = self._get_page_source_safe().lower()
+                            verify_source_raw = self._get_page_source_safe()
+                            verify_source = verify_source_raw.lower()
                             if any(indicator in verify_source for indicator in verification_error_indicators):
+                                error_code = ""
+                                try:
+                                    match = re.search(r'errorcode"\s*:\s*"([A-Z0-9_]+)"', verify_source_raw, re.IGNORECASE)
+                                    if match:
+                                        error_code = match.group(1)
+                                except Exception:
+                                    pass
+
                                 verification_issue = (
                                     f"LinkedIn verification page returned an interstitial/error at {verify_url}"
                                 )
+                                if error_code:
+                                    verification_issue += f" ({error_code})"
                                 _print("  Recovery tab still shows interstitial/error. Trying alternate URL...")
                                 continue
 

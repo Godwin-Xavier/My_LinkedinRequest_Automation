@@ -17,6 +17,7 @@ class Config:
     
     # LinkedIn - Simple li_at cookie value (matching first project's approach)
     LINKEDIN_LI_AT: str = ""
+    LINKEDIN_PROXY: str = ""
     
     # Telegram
     TELEGRAM_BOT_TOKEN: str = ""
@@ -35,6 +36,11 @@ class Config:
     HEADLESS: bool = True
     MIN_DELAY: int = 3
     MAX_DELAY: int = 8
+    PREFER_UC_IN_GHA: bool = True
+
+    # Login resilience
+    LOGIN_MAX_ATTEMPTS: int = 3
+    LOGIN_RETRY_BASE_DELAY: int = 20
     
     # Paths
     BASE_DIR: Path = Path(__file__).parent
@@ -51,6 +57,7 @@ class Config:
         
         # LinkedIn li_at cookie - simple string value (just like first project)
         config.LINKEDIN_LI_AT = env_vars.get("LINKEDIN_LI_AT", "").strip()
+        config.LINKEDIN_PROXY = env_vars.get("LINKEDIN_PROXY", "").strip()
         
         # Remove quotes if present (common when pasting)
         if config.LINKEDIN_LI_AT:
@@ -79,7 +86,12 @@ class Config:
         config.HEADLESS = env_vars.get("HEADLESS", "true").lower() == "true"
         config.MIN_DELAY = int(env_vars.get("MIN_DELAY", "3"))
         config.MAX_DELAY = int(env_vars.get("MAX_DELAY", "8"))
-        
+        config.PREFER_UC_IN_GHA = env_vars.get("PREFER_UC_IN_GHA", "true").lower() == "true"
+
+        # Login resilience
+        config.LOGIN_MAX_ATTEMPTS = max(1, int(env_vars.get("LOGIN_MAX_ATTEMPTS", "3")))
+        config.LOGIN_RETRY_BASE_DELAY = max(5, int(env_vars.get("LOGIN_RETRY_BASE_DELAY", "20")))
+
         return config
     
     @staticmethod

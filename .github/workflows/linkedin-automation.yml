@@ -61,6 +61,7 @@ jobs:
       - name: Build .env from GitHub Secrets
         env:
           LINKEDIN_LI_AT: ${{ secrets.LINKEDIN_LI_AT }}
+          LINKEDIN_PROXY: ${{ secrets.LINKEDIN_PROXY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
@@ -101,7 +102,15 @@ jobs:
               "PRIORITY_LOCATIONS=United States,Canada,Australia",
               "MIN_DELAY=3",
               "MAX_DELAY=8",
+              "PREFER_UC_IN_GHA=true",
+              "LOGIN_MAX_ATTEMPTS=4",
+              "LOGIN_RETRY_BASE_DELAY=60",
           ]
+
+          proxy = os.getenv("LINKEDIN_PROXY", "").strip()
+          if proxy:
+              lines.append(f"LINKEDIN_PROXY={proxy}")
+              print("LINKEDIN_PROXY added from secret")
 
           Path('.env').write_text("\n".join(lines) + "\n", encoding='utf-8')
           print("Created .env for automation run")
