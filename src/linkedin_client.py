@@ -282,11 +282,20 @@ class LinkedInClient:
         except Exception:
             pass
 
-        if any(x in current_url for x in ["/login", "/signin", "/checkpoint", "/authwall", "uas/login"]):
-            state["session_lost"] = True
-            self._append_unique(
+        if any(x in current_url for x in ["/login", "/signin", "uas/login"]):
+            # Only mark session lost if we are SURE it's the login page, not just a query param
+            if "login?" not in current_url:
+                state["session_lost"] = True
+                self._append_unique(
+                    state["diagnostics"],
+                    "LinkedIn redirected search to login page; cookie session likely expired.",
+                )
+        
+        if any(x in current_url for x in ["/checkpoint", "/authwall"]):
+             state["session_lost"] = True
+             self._append_unique(
                 state["diagnostics"],
-                "LinkedIn redirected search to login/checkpoint page; cookie session likely expired.",
+                "LinkedIn redirected search to security checkpoint.",
             )
 
         if any(x in page_title for x in ["sign in", "log in", "challenge", "checkpoint"]):

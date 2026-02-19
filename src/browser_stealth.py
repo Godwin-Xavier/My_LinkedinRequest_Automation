@@ -200,8 +200,6 @@ class StealthBrowser:
 
             self.driver = uc.Chrome(**uc_kwargs)
         
-            self.driver = uc.Chrome(**uc_kwargs)
-        
         # Determine platform for stealth
         # On GitHub Actions (Linux), we want "Linux x86_64" to match the real OS.
         # On Windows, "Win32".
@@ -261,11 +259,15 @@ class StealthBrowser:
                     self.driver.get(url)
                 except Exception as e:
                     # Catch timeout logic specifically if possible, or general exception
-                    # If it's a timeout, stopped loading and proceed to check content
-                    _print(f"  Navigation timed out/error: {e}")
+                    # If it's a timeout, try refreshing instead of just stopping
+                    _print(f"  Navigation timed out/error: {str(e)[:100]}...")
                     try:
+                        # Try to stop and refresh - sometimes the page is partially loaded but stuck
                         self.driver.execute_script("window.stop();")
-                        _print("  Stopped loading (window.stop()). checking page content...")
+                        _print("  Stopped loading (window.stop()). Attempting refresh...")
+                        time.sleep(1)
+                        self.driver.refresh()
+                        time.sleep(3)
                     except:
                         pass
                 
@@ -471,22 +473,32 @@ class StealthBrowser:
             _print("="*70)
             _print("PAGE LOAD FAILURE: Could not get page content")
             _print("="*70)
-            _print("The page did not load. This usually means:")
-            _print("  1. The li_at cookie is expired or invalid")
-            _print("  2. LinkedIn is rate-limiting your IP (HTTP 429)")
-            _print("  3. Network connectivity issue")
-            _print("")
-            _print("Solutions:")
-            _print("  1. Get a fresh li_at cookie from your browser")
-            _print("  2. Wait 15-30 minutes, then try again")
-            _print("  3. Use a different IP (VPN, mobile hotspot)")
-            _print("  4. Run: python telegram_login.py  (auto cookie capture)")
-            _print("="*70)
-            self.last_login_issue = (
-                "LinkedIn page content did not load after cookie injection. "
-                "Possible expired cookie, network issue, or temporary block."
-            )
-            return False
+            # Try one refresh before giving up
+            try:
+                _print("  Attempting one refresh to recover...")
+                self.driver.refresh()
+                time.sleep(5)
+                page_source = self._get_page_source_safe()
+            except:
+                pass
+
+        if not page_source:
+             _print("The page did not load (even after refresh). This usually means:")
+             _print("  1. The li_at cookie is expired or invalid")
+             _print("  2. LinkedIn is rate-limiting your IP (HTTP 429)")
+             _print("  3. Network connectivity issue")
+             _print("")
+             _print("Solutions:")
+             _print("  1. Get a fresh li_at cookie from your browser")
+             _print("  2. Wait 15-30 minutes, then try again")
+             _print("  3. Use a different IP (VPN, mobile hotspot)")
+             _print("  4. Run: python telegram_login.py  (auto cookie capture)")
+             _print("="*70)
+             self.last_login_issue = (
+                 "LinkedIn page content did not load after cookie injection. "
+                 "Possible expired cookie, network issue, or temporary block."
+             )
+             return False
         
         rate_limit_indicators = [
             "ERR_TOO_MANY_REDIRECTS",
@@ -598,11 +610,22 @@ class StealthBrowser:
             _print(f"Login check - URL: {current_url}")
             
             # Check 1: If redirected to login/signin page
-            login_indicators = ["/login", "/signin", "/checkpoint", "/authwall", "uas/login"]
+            # Be careful with "generic" error pages that might just have "login" in the URL query params
+            # We want to be sure it's the actual login PAGE.
+            login_indicators = ["/login", "/signin", "uas/login"]
             for indicator in login_indicators:
                 if indicator in current_url.lower():
-                    _print(f"Not logged in: URL contains '{indicator}'")
-                    return False
+                    # Double check it's not just a redirect param
+                    if "login" in current_url and "login" not in current_url.split("?")[0]:
+                         pass # It's in the query string, ignore for now
+                    else:
+                        _print(f"Not logged in: URL contains '{indicator}'")
+                        return False
+            
+            # Check for Authwall / Checkpoint specifically
+            if "/checkpoint/" in current_url or "/authwall" in current_url:
+                 _print("Not logged in: Hit Checkpoint/Authwall")
+                 return False
             
             # Check 2: Page title indicators
             if "sign in" in page_title or "log in" in page_title or "join" in page_title:
@@ -656,11 +679,36 @@ class StealthBrowser:
                 pass
             
             _print("Login status: Could not confirm login")
+            
+            # If we are unsure (generic title, no login form, no feed), try a refresh
+            # before failing hard.
+            if page_title == "www.linkedin.com" or "error" in page_title:
+                _print("  Generic/Error title detected. Attempting refresh to verify session...")
+                try:
+                    self.driver.refresh()
+                    time.sleep(5)
+                    # Recursively check again (just once)
+                    if self.is_logged_in_recursive_check():
+                        return True
+                except:
+                    pass
+
             return False
             
         except Exception as e:
             _print(f"Error checking login status: {e}")
             return False
+
+    def is_logged_in_recursive_check(self) -> bool:
+         """Helper to prevent infinite recursion in is_logged_in refresh logic."""
+         try:
+             # Simplified check using just URL and Title
+             current_url = self.driver.current_url
+             if "/feed" in current_url or "/in/" in current_url:
+                 return True
+             return False
+         except:
+             return False
     
     def get_li_at_cookie(self) -> Optional[str]:
         """Extract the li_at cookie value from the current browser session."""

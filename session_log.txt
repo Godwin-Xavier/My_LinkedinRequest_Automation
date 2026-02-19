@@ -1,0 +1,65 @@
+
+==================================================
+LinkedIn Outreach Started at 2026-02-19 21:44:10 IST
+==================================================
+
+Initializing stealth browser...
+Running in HEADFUL mode (Xvfb or local UI).
+Detected Chrome version: 145
+Logging in with li_at cookie...
+Navigating to neutral page (404) for cookie injection...
+Injecting li_at cookie...
+Navigating to https://www.linkedin.com/feed/ to verify session...
+Login check - Title: (2) Feed | LinkedIn
+Login check - URL: https://www.linkedin.com/feed/
+Logged in: URL is /feed
+Login successful! Session is active.
+Successfully logged into LinkedIn
+Invites already sent today: 14
+
+Starting outreach (limit: 15, dry_run: True)
+Target locations: United States, Canada, Australia
+Warming up on the feed to humanize behavior...
+Target: 1 more invites (already sent 14 today)
+AI query generation failed (model: gemini-1.5-flash): 404 models/gemini-1.5-flash is not found for API version v1beta, or is not supported for generateContent. Call ListModels to see the list of available models and their supported methods.
+Generated 9 search queries
+
+============================================================
+Search: 'Staffing Consultant' in 'United States'
+============================================================
+  Navigating to search: 'Staffing Consultant' in 'United States'
+Navigating to: https://www.linkedin.com/search/results/people/?keywords=Staffing%20Consultant%20United%20States...
+  Page loaded OK: https://www.linkedin.com/search/results/people/?keywords=staffing%20consultant%2
+  Search page loaded: https://www.linkedin.com/search/results/people/?keywords=Staffing%20Consultant%2...
+
+  --- Page 1 ---
+  Looking for result cards...
+    Trying card selector: [data-chameleon-result-urn]
+    -> Found 10 cards with: [data-chameleon-result-urn]
+  Found 10 result cards
+  [1] Joseph Jewell | IT Recruiter @ Motion | Master's in SE | https://www.linkedin.com/in/joseph-jewel
+       -> no Connect button (Follow only?), skipping
+  [2] Brianna Healing | Senior Recruiter at BlueWave | https://www.linkedin.com/in/brianna-heal
+       -> clicking Connect button...
+       -> waiting for modal...
+       -> clicking 'Send without a note'...
+       ** SENT invite to Brianna Healing! **
+       -> waiting 15-30s before next...
+
+Daily target reached! Sent 1 invites.
+
+============================================================
+OUTREACH COMPLETE
+  Sent: 1
+  Failed: 0
+  Skipped: 1
+  Total today: 15
+============================================================
+
+==================================================
+Outreach Complete!
+Sent: 1, Failed: 0, Skipped: 1
+==================================================
+
+
+Sending report to Telegram...

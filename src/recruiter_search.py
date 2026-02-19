@@ -66,15 +66,20 @@ class RecruiterSearchGenerator:
                 model_factory = getattr(genai_client, "GenerativeModel")
                 configure(api_key=config.GEMINI_API_KEY)
                 
-                # Ensure model name is valid (fallback to 1.5-flash if 3-flash passed)
+                # Ensure model name is valid (strip 'models/' prefix if present)
                 clean_model = self.model_name
-                if "gemini-3" in clean_model:
-                    clean_model = "gemini-1.5-flash"
+                if clean_model.startswith("models/"):
+                    clean_model = clean_model.replace("models/", "")
+                    
+                # Specific fix for 404 error on "gemini-1.5-flash"
+                # Sometimes it needs "models/" prefix, sometimes it hates it depending on library version.
+                # We try the clean one first.
                     
                 self.model = model_factory(clean_model)
                 print(f"Gemini AI search generator initialized successfully (model: {clean_model})")
             except Exception as e:
-                print(f"Failed to initialize Gemini: {e}")
+                print(f"Failed to initialize Gemini (model: {self.model_name}): {e}")
+                self.model = None
     
     def generate_queries(self, count: int = 10) -> List[tuple]:
         """Generate diverse search queries for recruiters."""
