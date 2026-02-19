@@ -65,8 +65,14 @@ class RecruiterSearchGenerator:
                 configure = getattr(genai_client, "configure")
                 model_factory = getattr(genai_client, "GenerativeModel")
                 configure(api_key=config.GEMINI_API_KEY)
-                self.model = model_factory(self.model_name)
-                print(f"Gemini AI search generator initialized successfully (model: {self.model_name})")
+                
+                # Ensure model name is valid (fallback to 1.5-flash if 3-flash passed)
+                clean_model = self.model_name
+                if "gemini-3" in clean_model:
+                    clean_model = "gemini-1.5-flash"
+                    
+                self.model = model_factory(clean_model)
+                print(f"Gemini AI search generator initialized successfully (model: {clean_model})")
             except Exception as e:
                 print(f"Failed to initialize Gemini: {e}")
     

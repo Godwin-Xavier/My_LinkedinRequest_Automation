@@ -1059,6 +1059,18 @@ class LinkedInClient:
 
     def run_daily_outreach(self, limit: Optional[int] = None, dry_run: bool = False) -> Dict:
         """Run the daily outreach routine using search-page connect flow."""
+        # Warm-up: Scroll the feed a bit to look human before jumping to search
+        _print("Warming up on the feed to humanize behavior...")
+        try:
+            # Scroll down
+            self.browser.driver.execute_script("window.scrollTo(0, document.body.scrollHeight/3);")
+            time.sleep(random.uniform(2, 4))
+            # Scroll up a tiny bit
+            self.browser.driver.execute_script("window.scrollBy(0, -300);")
+            time.sleep(random.uniform(1, 3))
+        except Exception:
+            _print("Warm-up scroll failed (harmless)")
+
         limit = limit or config.DAILY_INVITE_LIMIT
 
         already_sent = self.get_today_invite_count()
