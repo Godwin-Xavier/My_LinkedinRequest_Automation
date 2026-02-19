@@ -361,6 +361,8 @@ class StealthBrowser:
         try:
             self.driver.get("https://www.linkedin.com/404")
             self.random_delay(2, 4)
+            # Clear any existing cookies to prevent conflicts/loops
+            self.driver.delete_all_cookies()
         except Exception as e:
             _print(f"Failed to navigate to 404 page: {e}")
             self.last_login_issue = f"Failed to open LinkedIn before cookie injection: {type(e).__name__}: {e}"
@@ -371,8 +373,19 @@ class StealthBrowser:
             self.driver.add_cookie({
                 'name': 'li_at',
                 'value': normalized_li_at,
-                'domain': '.linkedin.com'
+                'domain': '.linkedin.com',
+                'path': '/',
+                'secure': True,
+                'httpOnly': True,
             })
+            
+            # Enforce Accept-Language to match stealth configuration
+            # preventing locale-based redirects (e.g. to in.linkedin.com)
+            self.driver.execute_cdp_cmd('Network.setUserAgentOverride', {
+                "userAgent": self.driver.execute_script("return navigator.userAgent"),
+                "acceptLanguage": "en-US,en;q=0.9"
+            })
+            
         except Exception as e:
             _print(f"Failed to inject cookie: {e}")
             self.last_login_issue = f"Failed to inject li_at cookie into browser: {type(e).__name__}: {e}"

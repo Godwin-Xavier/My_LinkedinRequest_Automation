@@ -226,21 +226,17 @@ class LinkedInClient:
     def _build_search_url(self, keyword: str, location: Optional[str] = None) -> str:
         """
         Build LinkedIn people search URL.
-        Only uses 'keywords' to reduce tracking parameter overhead.
+        Uses bare minimum parameters to avoid redirect loops.
         """
         import urllib.parse
         
-        # Combine keyword and location into a single query for simpler URL
-        # "Technical Recruiter United States" works better than separate filters
         query = keyword
         if location and location.lower() != "worldwide":
             query = f"{keyword} {location}"
             
-        params = [
-            f"keywords={urllib.parse.quote(query)}",
-        ]
-        
-        return "https://www.linkedin.com/search/results/people/?" + "&".join(params)
+        # VERY minimal URL. No 'origin', no 'network', no 'geoUrn'.
+        # Just keywords. This relies on LinkedIn's default ranking.
+        return f"https://www.linkedin.com/search/results/people/?keywords={urllib.parse.quote(query)}"
 
     def _navigate_to_search(self, keyword: str, location: Optional[str] = None) -> bool:
         """Navigate to a people search results page."""
