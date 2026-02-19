@@ -5,6 +5,7 @@ Uses undetected-chromedriver and selenium-stealth to avoid bot detection.
 import random
 import sys
 import time
+from datetime import datetime
 import os
 import re
 import subprocess
@@ -35,6 +36,37 @@ class StealthBrowser:
     def __init__(self, headless: Optional[bool] = None):
         self.headless = headless if headless is not None else config.HEADLESS
         self.driver: Optional[WebDriver] = None
+        self.last_navigation_issue: str = ""
+        
+        # Ensure debug directory exists
+        self.debug_dir = config.DATA_DIR / "debug"
+        self.debug_dir.mkdir(parents=True, exist_ok=True)
+
+    def save_debug_snapshot(self, name_prefix: str) -> None:
+        """Save screenshot and page source for debugging."""
+        if not self.driver:
+            return
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_prefix = re.sub(r'[^\w\-]', '_', name_prefix)
+        base_path = self.debug_dir / f"{timestamp}_{safe_prefix}"
+        
+        try:
+            # 1. Save Screenshot
+            screenshot_path = base_path.with_suffix(".png")
+            self.driver.save_screenshot(str(screenshot_path))
+            _print(f"Saved debug screenshot: {screenshot_path.name}")
+        except Exception as e:
+            _print(f"Failed to save screenshot: {e}")
+
+        try:
+            # 2. Save HTML Source
+            html_path = base_path.with_suffix(".html")
+            with open(html_path, "w", encoding="utf-8") as f:
+                f.write(self.driver.page_source)
+            _print(f"Saved debug HTML: {html_path.name}")
+        except Exception as e:
+            _print(f"Failed to save HTML source: {e}")
     
     def _get_chrome_major_version(self, chrome_path: Optional[str] = None) -> Optional[int]:
         """Detect installed Chrome major version to prevent driver mismatch."""
@@ -205,6 +237,8 @@ class StealthBrowser:
         """
         if not self.driver:
             raise RuntimeError("Browser not started")
+
+        self.last_navigation_issue = ""
             
         for attempt in range(max_retries + 1):
             try:
@@ -260,10 +294,15 @@ class StealthBrowser:
                             pass
                         continue
                     else:
+                        self.last_navigation_issue = (
+                            f"LinkedIn blocked navigation via {reason} after {max_retries + 1} attempts "
+                            f"(url: {current_url[:120]})."
+                        )
                         _print("Max retries reached for rate limit.")
                         return False
                 
                 _print(f"  Page loaded OK: {current_url[:80]}")
+                self.last_navigation_issue = ""
                 return True
                 
             except Exception as e:
@@ -271,8 +310,12 @@ class StealthBrowser:
                 if attempt < max_retries:
                     time.sleep(random.uniform(5, 10))
                 else:
+                    self.last_navigation_issue = f"Navigation error after retries: {type(e).__name__}: {e}"
                     return False
-        
+
+        if not self.last_navigation_issue:
+            self.last_navigation_issue = "Navigation failed for an unknown reason."
+
         return False
 
     def login_with_cookie(self, li_at_value: str) -> bool:
@@ -280,12 +323,15 @@ class StealthBrowser:
         if not self.driver:
             raise RuntimeError("Browser not started. Call start() first.")
 
+        self.last_login_issue = ""
+
         normalized_li_at = self._normalize_li_at_value(li_at_value)
         if normalized_li_at != (li_at_value or ""):
             _print("Normalized LINKEDIN_LI_AT format before injection")
 
         if not normalized_li_at:
             _print("LINKEDIN_LI_AT cookie value is empty!")
+            self.last_login_issue = "LINKEDIN_LI_AT cookie value is empty after normalization."
             return False
         
         _print("Navigating to neutral page (404) for cookie injection...")
@@ -294,6 +340,7 @@ class StealthBrowser:
             self.random_delay(2, 4)
         except Exception as e:
             _print(f"Failed to navigate to 404 page: {e}")
+            self.last_login_issue = f"Failed to open LinkedIn before cookie injection: {type(e).__name__}: {e}"
             return False
         
         _print("Injecting li_at cookie...")
@@ -305,6 +352,7 @@ class StealthBrowser:
             })
         except Exception as e:
             _print(f"Failed to inject cookie: {e}")
+            self.last_login_issue = f"Failed to inject li_at cookie into browser: {type(e).__name__}: {e}"
             return False
         
         # Navigate to /feed/ (lighter than /mynetwork/, fewer redirects).
@@ -367,6 +415,10 @@ class StealthBrowser:
             _print("  2. Get a fresh li_at cookie from your browser")
             _print("  3. Try restarting Chrome completely, then retry")
             _print("=" * 70)
+            self.last_login_issue = (
+                "Chrome tab crashed during LinkedIn session verification. "
+                "Cookie may be invalid or the browser session was blocked."
+            )
             return False
         
         # Check for rate limiting / error pages -- SAFE: handle None page_source
@@ -388,6 +440,10 @@ class StealthBrowser:
             _print("  3. Use a different IP (VPN, mobile hotspot)")
             _print("  4. Run: python telegram_login.py  (auto cookie capture)")
             _print("="*70)
+            self.last_login_issue = (
+                "LinkedIn page content did not load after cookie injection. "
+                "Possible expired cookie, network issue, or temporary block."
+            )
             return False
         
         rate_limit_indicators = [
@@ -415,6 +471,9 @@ class StealthBrowser:
                 _print("  3. Get a fresh li_at cookie after waiting")
                 _print("  4. Run: python telegram_login.py  (auto cookie capture)")
                 _print("="*70)
+                self.last_login_issue = (
+                    f"LinkedIn rate-limited session verification with indicator: '{indicator}'."
+                )
                 return False
         
         # Check if we landed on login/authwall page (cookie definitely expired)
@@ -430,11 +489,13 @@ class StealthBrowser:
             _print("  1. Run: python telegram_login.py  (recommended)")
             _print("  2. Manually copy fresh cookie from browser (F12 > Application > Cookies)")
             _print("="*70)
+            self.last_login_issue = "LinkedIn redirected to login/authwall after cookie injection."
             return False
         
         # Validate we're actually logged in
         if self.is_logged_in():
             _print("Login successful! Session is active.")
+            self.last_login_issue = ""
             return True
         
         _print("")
@@ -446,6 +507,7 @@ class StealthBrowser:
         _print("  Option 1: Run 'python telegram_login.py' (recommended)")
         _print("  Option 2: Manually copy from browser (F12 > Application > Cookies)")
         _print("="*70)
+        self.last_login_issue = "Login validation failed after cookie injection."
         return False
     
     # Keep inject_cookies as alias for backward compatibility

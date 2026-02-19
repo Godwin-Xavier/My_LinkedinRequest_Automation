@@ -145,6 +145,16 @@ jobs:
           name: outreach-log-${{ github.run_id }}
           path: run_output.log
 
+      - name: Upload debug snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-snapshots-${{ github.run_id }}
+          path: |
+            data/debug/*.png
+            data/debug/*.html
+          if-no-files-found: ignore
+
       - name: Save invite database cache
         if: always() && hashFiles('data/agent_state.db') != ''
         uses: actions/cache/save@v4

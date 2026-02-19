@@ -24,6 +24,7 @@ class Config:
     
     # AI
     GEMINI_API_KEY: str = ""
+    GEMINI_MODEL: str = "gemini-3-flash"
     
     # Automation
     DAILY_INVITE_LIMIT: int = 14
@@ -63,6 +64,7 @@ class Config:
         
         # AI
         config.GEMINI_API_KEY = env_vars.get("GEMINI_API_KEY", "")
+        config.GEMINI_MODEL = env_vars.get("GEMINI_MODEL", "gemini-3-flash").strip() or "gemini-3-flash"
         
         # Automation
         config.DAILY_INVITE_LIMIT = int(env_vars.get("DAILY_INVITE_LIMIT", "14"))

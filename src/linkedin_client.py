@@ -68,6 +68,12 @@ class LinkedInClient:
         self.search_generator = search_generator
         self._ensure_tables()
 
+    @staticmethod
+    def _append_unique(items: List[str], value: str):
+        """Append a message only when non-empty and not already present."""
+        if value and value not in items:
+            items.append(value)
+
     # ------------------------------------------------------------------
     # Database helpers
     # ------------------------------------------------------------------
@@ -251,6 +257,95 @@ class LinkedInClient:
 
         _print(f"  Search page loaded: {self.driver.current_url[:80]}...")
         return True
+
+    def _inspect_search_page_state(self) -> Dict:
+        """Collect high-value diagnostics from the current search page."""
+        state = {
+            "diagnostics": [],
+            "empty_results": False,
+            "session_lost": False,
+            "rate_limited": False,
+        }
+
+        if not self.driver:
+            self._append_unique(state["diagnostics"], "Browser driver is unavailable during search inspection.")
+            state["session_lost"] = True
+            return state
+
+        current_url = ""
+        page_title = ""
+        try:
+            current_url = (self.driver.current_url or "").lower()
+        except Exception:
+            pass
+
+        try:
+            page_title = (self.driver.title or "").lower()
+        except Exception:
+            pass
+
+        if any(x in current_url for x in ["/login", "/signin", "/checkpoint", "/authwall", "uas/login"]):
+            state["session_lost"] = True
+            self._append_unique(
+                state["diagnostics"],
+                "LinkedIn redirected search to login/checkpoint page; cookie session likely expired.",
+            )
+
+        if any(x in page_title for x in ["sign in", "log in", "challenge", "checkpoint"]):
+            state["session_lost"] = True
+            self._append_unique(
+                state["diagnostics"],
+                "LinkedIn page title indicates authentication or challenge flow during search.",
+            )
+
+        body_text = ""
+        try:
+            body = self.driver.find_element(By.TAG_NAME, "body")
+            body_text = (body.text or "").lower()[:5000]
+        except Exception:
+            pass
+
+        empty_indicators = [
+            "no results found",
+            "we couldn't find any results",
+            "try removing a filter",
+            "expand your search",
+            "no matching people",
+        ]
+        if any(indicator in body_text for indicator in empty_indicators):
+            state["empty_results"] = True
+            self._append_unique(
+                state["diagnostics"],
+                "LinkedIn search returned no matching profiles for the current query/filter.",
+            )
+
+        rate_indicators = [
+            "too many requests",
+            "temporarily restricted",
+            "unusual traffic",
+            "http error 429",
+            "protect our members",
+        ]
+        if any(indicator in body_text for indicator in rate_indicators):
+            state["rate_limited"] = True
+            self._append_unique(
+                state["diagnostics"],
+                "LinkedIn displayed a temporary restriction or rate-limit message on search.",
+            )
+
+        challenge_indicators = [
+            "verify your identity",
+            "let us know you're human",
+            "security verification",
+        ]
+        if any(indicator in body_text for indicator in challenge_indicators):
+            state["session_lost"] = True
+            self._append_unique(
+                state["diagnostics"],
+                "LinkedIn requested identity/challenge verification during search.",
+            )
+
+        return state
 
     def _get_result_cards(self) -> list:
         """Get all search result card elements on the current page.
@@ -704,7 +799,16 @@ class LinkedInClient:
             "follow_only_detected": False,
             "throttled": False,
             "throttle_reason": "",
+            "diagnostics": [],
+            "navigation_failed": False,
+            "empty_results_detected": False,
+            "session_lost": False,
+            "pages_scanned": 0,
+            "cards_seen": 0,
         }
+
+        def add_diagnostic(message: str):
+            self._append_unique(result["diagnostics"], message)
 
         throttle_modal_indicators = [
             "weekly invitation limit",
@@ -717,12 +821,50 @@ class LinkedInClient:
 
         # Navigate to search
         if not self._navigate_to_search(keyword, location):
+            result["navigation_failed"] = True
+
+            nav_issue = (getattr(self.browser, "last_navigation_issue", "") or "").strip()
+            if nav_issue:
+                add_diagnostic(nav_issue)
+
+            page_state = self._inspect_search_page_state()
+            for diagnostic in page_state.get("diagnostics", []):
+                add_diagnostic(diagnostic)
+
+            if page_state.get("empty_results"):
+                result["empty_results_detected"] = True
+            if page_state.get("session_lost"):
+                result["session_lost"] = True
+            if page_state.get("rate_limited"):
+                result["throttled"] = True
+                if not result["throttle_reason"]:
+                    result["throttle_reason"] = (
+                        "LinkedIn displayed a temporary restriction or rate-limit message during search navigation."
+                    )
+                    add_diagnostic(result["throttle_reason"])
+
+            try:
+                if not self.browser.is_logged_in():
+                    result["session_lost"] = True
+                    add_diagnostic(
+                        "LinkedIn session check failed while opening search results; cookie may be expired."
+                    )
+            except Exception:
+                pass
+
+            if not result["diagnostics"]:
+                add_diagnostic("Search page failed to load; likely rate-limited or temporarily blocked.")
+            
+            # Save debug snapshot on navigation failure
+            self.browser.save_debug_snapshot(f"nav_fail_{keyword[:10]}")
             return result
 
         max_pages = 5  # Don't go beyond 5 pages per query to stay safe
         for page_num in range(1, max_pages + 1):
             if result["sent"] >= remaining:
                 break
+
+            result["pages_scanned"] += 1
 
             _print(f"\n  --- Page {page_num} ---")
 
@@ -735,9 +877,43 @@ class LinkedInClient:
             cards = self._get_result_cards()
             if not cards:
                 _print("  No result cards found on this page")
+                
+                # Save debug snapshot when no cards found
+                self.browser.save_debug_snapshot(f"no_cards_{keyword[:10]}_page{page_num}")
+
+                page_state = self._inspect_search_page_state()
+                for diagnostic in page_state.get("diagnostics", []):
+                    add_diagnostic(diagnostic)
+
+                if page_state.get("empty_results"):
+                    result["empty_results_detected"] = True
+                if page_state.get("session_lost"):
+                    result["session_lost"] = True
+                if page_state.get("rate_limited"):
+                    result["throttled"] = True
+                    if not result["throttle_reason"]:
+                        result["throttle_reason"] = (
+                            "LinkedIn displayed a temporary restriction or rate-limit message on search page."
+                        )
+                        add_diagnostic(result["throttle_reason"])
+
+                if not page_state.get("diagnostics"):
+                    add_diagnostic(
+                        "Search page loaded but no result cards were detected. LinkedIn layout/loading may have changed."
+                    )
+
+                try:
+                    if not self.browser.is_logged_in():
+                        result["session_lost"] = True
+                        add_diagnostic(
+                            "LinkedIn session check failed while reading search results; refresh cookie if this repeats."
+                        )
+                except Exception:
+                    pass
                 break
 
             _print(f"  Found {len(cards)} result cards")
+            result["cards_seen"] += len(cards)
             page_candidates = 0
             page_follow_only = 0
 
@@ -749,6 +925,9 @@ class LinkedInClient:
                 person = self._extract_person_from_card(card)
                 if not person:
                     _print(f"  [{i+1}] Could not extract person info, skipping")
+                    # Save snapshot if extraction fails (limiting to first failure per page to avoid spam)
+                    if i == 0:
+                        self.browser.save_debug_snapshot(f"extract_fail_{keyword[:10]}")
                     continue
 
                 name = person["name"]
@@ -825,6 +1004,7 @@ class LinkedInClient:
                         result["throttle_reason"] = (
                             f"LinkedIn invite throttling detected in modal: '{matched}'"
                         )
+                        add_diagnostic(result["throttle_reason"])
                         _print(f"       -> {result['throttle_reason']}")
                         self._dismiss_modal()
                         return result
@@ -859,6 +1039,10 @@ class LinkedInClient:
                         "Likely out-of-network results or temporary invite throttling."
                     )
                 result["follow_only_detected"] = True
+                add_diagnostic("All visible profiles on this page were Follow-only (no Connect action available).")
+
+            if result["session_lost"]:
+                break
 
             # Go to next page if we still need more invites
             if result["sent"] < remaining:
@@ -890,6 +1074,13 @@ class LinkedInClient:
                 "total_today": already_sent,
                 "recruiters_found": [],
                 "errors": [],
+                "warnings": [],
+                "diagnostics": ["Daily invite limit already reached before outreach started."],
+                "limit_reached": True,
+                "queries_attempted": 0,
+                "queries_navigation_failed": 0,
+                "queries_empty_results": 0,
+                "queries_follow_only": 0,
             }
 
         _print(f"Target: {remaining} more invites (already sent {already_sent} today)")
@@ -901,6 +1092,13 @@ class LinkedInClient:
             "skipped": 0,
             "recruiters_found": [],
             "errors": [],
+            "warnings": [],
+            "diagnostics": [],
+            "limit_reached": False,
+            "queries_attempted": 0,
+            "queries_navigation_failed": 0,
+            "queries_empty_results": 0,
+            "queries_follow_only": 0,
         }
 
         # Keep query volume intentionally small to stay role-focused and avoid broad probing.
@@ -921,6 +1119,7 @@ class LinkedInClient:
             _print(f"Search: '{keyword}' in '{location}'")
             _print(f"{'='*60}")
             queries_used.append(f"{keyword} | {location}")
+            results["queries_attempted"] += 1
 
             search_result = self.search_and_connect(
                 keyword, location, remaining - total_sent
@@ -932,13 +1131,31 @@ class LinkedInClient:
             results["skipped"] += search_result["skipped"]
             results["recruiters_found"].extend(search_result["recruiters"])
 
+            for diagnostic in search_result.get("diagnostics", []):
+                self._append_unique(results["diagnostics"], diagnostic)
+
+            if search_result.get("navigation_failed"):
+                results["queries_navigation_failed"] += 1
+
+            if search_result.get("empty_results_detected"):
+                results["queries_empty_results"] += 1
+
             if search_result.get("follow_only_detected"):
                 follow_only_queries += 1
+                results["queries_follow_only"] += 1
+
+            if search_result.get("session_lost"):
+                session_msg = (
+                    "LinkedIn session appears invalid during outreach. "
+                    "Refresh LINKEDIN_LI_AT cookie and retry."
+                )
+                self._append_unique(results["errors"], session_msg)
+                _print(f"  {session_msg}")
+                break
 
             if search_result.get("throttled"):
                 throttle_reason = search_result.get("throttle_reason") or "LinkedIn invite throttling detected"
-                if throttle_reason not in results["errors"]:
-                    results["errors"].append(throttle_reason)
+                self._append_unique(results["errors"], throttle_reason)
                 _print(f"  {throttle_reason}")
                 break
 
@@ -954,8 +1171,38 @@ class LinkedInClient:
                 "Search returned Follow-only profiles; now forcing 2nd-degree network filter. "
                 "If this persists, LinkedIn may be throttling invites."
             )
-            if follow_only_msg not in results["errors"]:
-                results["errors"].append(follow_only_msg)
+            self._append_unique(results["warnings"], follow_only_msg)
+
+        if results["sent"] == 0 and results["queries_empty_results"] > 0:
+            self._append_unique(
+                results["warnings"],
+                "LinkedIn search returned no matching profiles for one or more query/location combinations.",
+            )
+
+        if (
+            results["sent"] == 0
+            and results["queries_attempted"] > 0
+            and results["queries_navigation_failed"] == results["queries_attempted"]
+        ):
+            self._append_unique(
+                results["warnings"],
+                "All search queries failed to load. LinkedIn may be rate-limiting or blocking this session.",
+            )
+
+        if results["sent"] == 0 and results["failed"] > 0:
+            self._append_unique(
+                results["warnings"],
+                "Invite actions were attempted but failed before confirmation. Review modal/button diagnostics.",
+            )
+
+        if results["sent"] == 0 and not results["errors"] and not results["warnings"]:
+            self._append_unique(
+                results["warnings"],
+                "No invites were sent and LinkedIn did not expose a clear failure reason.",
+            )
+            # innovative: capture state if we did work but got zero results
+            if results["queries_attempted"] > 0:
+                 self.browser.save_debug_snapshot("zero_invites_mystery")
 
         results["total_today"] = already_sent + results["sent"]
         self._record_daily_stats(results["sent"], results["failed"], queries_used)

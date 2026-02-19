@@ -19,6 +19,7 @@ cookies.json
 # Logs
 *.log
 logs/
+data/debug/
 
 # IDE
 .vscode/

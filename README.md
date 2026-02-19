@@ -40,6 +40,7 @@ TELEGRAM_CHAT_ID=your_chat_id_here
 
 # Optional: Gemini API for AI-powered search queries
 GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-3-flash
 ```
 
 ### 2. Get LinkedIn li_at Cookie
@@ -115,6 +116,7 @@ Set these GitHub Repository Secrets:
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
 - `GEMINI_API_KEY` (optional)
+- `GEMINI_MODEL` (optional, default: `gemini-3-flash`)
 
 How to enable:
 

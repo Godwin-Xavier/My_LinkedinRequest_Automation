@@ -36,7 +36,10 @@ def run_outreach(dry_run: bool = False, limit: Optional[int] = None):
         "skipped": 0,
         "total_today": 0,
         "recruiters_found": [],
-        "errors": []
+        "errors": [],
+        "warnings": [],
+        "diagnostics": [],
+        "limit_reached": False,
     }
     
     browser = None
@@ -50,6 +53,8 @@ def run_outreach(dry_run: bool = False, limit: Optional[int] = None):
             for err in errors:
                 print(f"Config Error: {err}")
                 results["errors"].append(err)
+
+            results["diagnostics"].append("Configuration validation failed before browser startup.")
             
             if "LINKEDIN_LI_AT" in str(errors):
                 notifier.send_cookie_warning()
@@ -67,7 +72,14 @@ def run_outreach(dry_run: bool = False, limit: Optional[int] = None):
         print("Logging in with li_at cookie...")
         if not browser.login_with_cookie(config.LINKEDIN_LI_AT):
             print("Failed to log in with provided cookie!")
-            results["errors"].append("Cookie authentication failed")
+            login_issue = (getattr(browser, "last_login_issue", "") or "").strip()
+            if login_issue:
+                results["errors"].append(login_issue)
+            else:
+                results["errors"].append("Cookie authentication failed")
+            results["diagnostics"].append(
+                "Cookie login failed before outreach search started. Refresh LINKEDIN_LI_AT and retry."
+            )
             notifier.send_cookie_warning()
             
             # Auto-offer Telegram login
@@ -123,9 +135,8 @@ def run_outreach(dry_run: bool = False, limit: Optional[int] = None):
     finally:
         if browser:
             browser.close()
-    
-    # Send Telegram summary
-    notifier.send_daily_summary(results)
+
+        notifier.send_daily_summary(results)
     
     return results
 

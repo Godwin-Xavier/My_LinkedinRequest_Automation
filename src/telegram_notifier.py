@@ -83,17 +83,35 @@ class TelegramNotifier:
     def send_daily_summary(self, results: Dict) -> bool:
         """Send the daily outreach summary."""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        queries_attempted = int(results.get("queries_attempted", 0) or 0)
+        queries_navigation_failed = int(results.get("queries_navigation_failed", 0) or 0)
+        queries_empty_results = int(results.get("queries_empty_results", 0) or 0)
+        queries_follow_only = int(results.get("queries_follow_only", 0) or 0)
+        limit_reached = bool(results.get("limit_reached", False))
+        sent_count = int(results.get("sent", 0) or 0)
+        failed_count = int(results.get("failed", 0) or 0)
+        errors = results.get("errors", [])
+        warnings = results.get("warnings", [])
+        diagnostics = results.get("diagnostics", [])
         
         message = f"""<b>LinkedIn Outreach Report</b>
 <i>{timestamp}</i>
 
 <b>Statistics:</b>
-- Invites Sent: <b>{results.get('sent', 0)}</b>
-- Failed: {results.get('failed', 0)}
+- Invites Sent: <b>{sent_count}</b>
+- Failed: {failed_count}
 - Skipped: {results.get('skipped', 0)}
 - Total Today: {results.get('total_today', 0)}
 
 """
+
+        if queries_attempted > 0 or queries_navigation_failed > 0 or queries_empty_results > 0 or queries_follow_only > 0:
+            message += "<b>Search Diagnostics:</b>\n"
+            message += f"- Queries Attempted: {queries_attempted}\n"
+            message += f"- Navigation Failures: {queries_navigation_failed}\n"
+            message += f"- Empty Result Queries: {queries_empty_results}\n"
+            message += f"- Follow-only Queries: {queries_follow_only}\n\n"
         
         recruiters = results.get('recruiters_found', [])[:5]
         if recruiters:
@@ -103,19 +121,36 @@ class TelegramNotifier:
                 title = html_mod.escape(self._sanitize_text(r.get('title', ''))[:40])
                 message += f"- {name}\n  <i>{title}</i>\n"
         
-        errors = results.get('errors', [])
         if errors:
             message += f"\n<b>Errors:</b>\n"
             for error in errors[:3]:
-                safe_error = html_mod.escape(self._sanitize_text(error)[:50])
+                safe_error = html_mod.escape(self._sanitize_text(error)[:120])
                 message += f"- {safe_error}\n"
+
+        if warnings:
+            message += f"\n<b>Warnings:</b>\n"
+            for warning in warnings[:3]:
+                safe_warning = html_mod.escape(self._sanitize_text(warning)[:120])
+                message += f"- {safe_warning}\n"
+
+        if diagnostics:
+            message += f"\n<b>Diagnostics:</b>\n"
+            for diagnostic in diagnostics[:3]:
+                safe_diag = html_mod.escape(self._sanitize_text(diagnostic)[:120])
+                message += f"- {safe_diag}\n"
         
-        if results.get('errors'):
+        if errors:
             message += "\n<b>Status: Error</b>"
-        elif results.get('sent', 0) > 0:
+        elif limit_reached:
+            message += "\n<b>Status: Daily Limit Reached</b>"
+        elif sent_count > 0 and (failed_count > 0 or warnings or diagnostics):
+            message += "\n<b>Status: Success with Warnings</b>"
+        elif sent_count > 0:
             message += "\n<b>Status: Success</b>"
-        elif results.get('failed', 0) > 0:
+        elif failed_count > 0:
             message += "\n<b>Status: Partial Failure</b>"
+        elif warnings or diagnostics:
+            message += "\n<b>Status: Warning</b>"
         else:
             message += "\n<b>Status: No Action Needed</b>"
         

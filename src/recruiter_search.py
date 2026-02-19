@@ -3,7 +3,7 @@ AI-Powered Recruiter Search Query Generator.
 Uses Gemini API to create diverse search queries.
 """
 import random
-from typing import List, Optional
+from typing import Any, List, Optional, cast
 import warnings
 
 # Suppress Google GenAI deprecation warnings
@@ -57,12 +57,16 @@ class RecruiterSearchGenerator:
     ]
     
     def __init__(self):
-        self.model = None
+        self.model: Optional[Any] = None
+        self.model_name = config.GEMINI_MODEL
         if genai and config.GEMINI_API_KEY:
             try:
-                genai.configure(api_key=config.GEMINI_API_KEY)
-                self.model = genai.GenerativeModel("gemini-2.0-flash")
-                print("Gemini AI search generator initialized successfully")
+                genai_client: Any = cast(Any, genai)
+                configure = getattr(genai_client, "configure")
+                model_factory = getattr(genai_client, "GenerativeModel")
+                configure(api_key=config.GEMINI_API_KEY)
+                self.model = model_factory(self.model_name)
+                print(f"Gemini AI search generator initialized successfully (model: {self.model_name})")
             except Exception as e:
                 print(f"Failed to initialize Gemini: {e}")
     
@@ -72,7 +76,7 @@ class RecruiterSearchGenerator:
             try:
                 return self._generate_ai_queries(count)
             except Exception as e:
-                print(f"AI query generation failed: {e}")
+                print(f"AI query generation failed (model: {self.model_name}): {e}")
         
         return self._get_fallback_queries(count)
     
@@ -94,7 +98,11 @@ Example: [{{"keyword": "Technical Recruiter", "location": "United States"}}]
 
 Generate {count} unique combinations:"""
 
-        response = self.model.generate_content(prompt)
+        model = self.model
+        if model is None:
+            return self._get_fallback_queries(count)
+
+        response = cast(Any, model).generate_content(prompt)
         text = response.text
         
         # Parse JSON from response
