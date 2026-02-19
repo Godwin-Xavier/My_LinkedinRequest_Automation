@@ -93,7 +93,9 @@ jobs:
               f"TELEGRAM_BOT_TOKEN={os.environ['TELEGRAM_BOT_TOKEN']}",
               f"TELEGRAM_CHAT_ID={os.environ['TELEGRAM_CHAT_ID']}",
               f"GEMINI_API_KEY={os.getenv('GEMINI_API_KEY', '')}",
-              "HEADLESS=true",
+              # We use xvfb-run, so we tell the script we have a 'head' (display)
+              # This helps bypass anti-bot checks that look for headless properties
+              "HEADLESS=false",
               "DAILY_INVITE_LIMIT=14",
               "SCHEDULE_TIME=09:00",
               "PRIORITY_LOCATIONS=United States,Canada,Australia",
@@ -133,10 +135,14 @@ jobs:
           print(f"Config validation errors={errs}")
           PY
 
-      - name: Run outreach now
+      - name: Install Xvfb
+        run: sudo apt-get install -y xvfb
+
+      - name: Run outreach now (with Xvfb)
         run: |
           set -o pipefail
-          python main.py --run-now 2>&1 | tee run_output.log
+          # Run with a virtual display (server-num 99)
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python main.py --run-now 2>&1 | tee run_output.log
 
       - name: Upload outreach log artifact
         if: always() && hashFiles('run_output.log') != ''

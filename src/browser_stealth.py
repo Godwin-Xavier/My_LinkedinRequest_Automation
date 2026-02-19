@@ -147,7 +147,12 @@ class StealthBrowser:
             _print(f"Using Chrome binary: {chrome_path}")
         
         if self.headless:
+            _print("Running in headless mode (no visible UI).")
             options.add_argument("--headless=new")
+        else:
+            _print("Running in HEADFUL mode (Xvfb or local UI).")
+            # If we are in GitHub Actions but HEADLESS is false, we assume Xvfb is running.
+            # We do NOT add --headless argument.
         
         # Anti-detection options
         options.add_argument("--disable-blink-features=AutomationControlled")
@@ -155,6 +160,7 @@ class StealthBrowser:
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-gpu")
+        # Increase window size for better layout/rendering
         options.add_argument("--window-size=1920,1080")
         options.add_argument("--start-maximized")
         
